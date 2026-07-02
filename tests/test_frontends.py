@@ -9,6 +9,7 @@ from pug.frontends.http import (
     raw_display_label,
     render_control_page,
     render_logs_page,
+    render_raw_stats_page,
     render_settings_page,
     tail_log_lines,
 )
@@ -114,11 +115,27 @@ def test_dashboard_has_modern_sections_and_no_settings_form() -> None:
     assert "UPS power flow diagram" in page
     assert "Line / AVR path active" in page
     assert "Line / AVR" in page
+    assert "Bypass Path" in page
+    assert "Inactive / standby path" in page
+    assert 'class="power desktop"' in page
+    assert 'class="power mobile"' in page
+    assert "Input Voltage" in page
     assert "Rectifier" not in page
     assert "UPS Details" in page
-    assert "Raw Backend Stats" in page
+    assert 'href="/raw"' in page
+    assert "<h2>Raw Backend Stats</h2>" not in page
     assert 'href="/settings"' in page
     assert 'action="/config"' not in page
+
+
+def test_raw_stats_page_contains_backend_values() -> None:
+    page = render_raw_stats_page(simulator_state().updated(raw={"LINEV": "221.7 Volts"}).to_dict(), AppConfig())
+
+    assert "Raw Backend Stats" in page
+    assert 'href="/api/raw"' in page
+    assert "Input Voltage" in page
+    assert "221.7 Volts" in page
+    assert 'class="active" href="/raw"' in page
 
 
 def test_settings_page_contains_configuration_form() -> None:

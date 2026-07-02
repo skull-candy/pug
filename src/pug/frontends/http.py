@@ -82,6 +82,12 @@ class HttpFrontend:
                         "text/html; charset=utf-8",
                         render_logs_page(config, tail_log_lines(config.logging.file_path, config.logging.web_tail_lines)).encode(),
                     )
+                elif self.path == "/raw":
+                    self._send(
+                        200,
+                        "text/html; charset=utf-8",
+                        render_raw_stats_page(state.to_dict(), config).encode(),
+                    )
                 elif self.path == "/api/state":
                     if config.http.api_enabled:
                         self._send_json(state_payload(state))
@@ -260,10 +266,6 @@ def render_control_page(state: dict[str, Any], config: AppConfig) -> str:
 def render_dashboard_page(state: dict[str, Any], config: AppConfig) -> str:
     title = _escape(str(state["name"]))
     rows = render_detail_rows(state)
-    raw_rows = "\n".join(
-        f"<tr><th>{_escape(raw_display_label(str(key)))}</th><td>{_escape(str(value))}</td></tr>"
-        for key, value in sorted(state.get("raw", {}).items())
-    )
     overview = render_overview_cards(state)
     diagram = render_power_flow_diagram(state)
     return page_shell(
@@ -289,10 +291,27 @@ def render_dashboard_page(state: dict[str, Any], config: AppConfig) -> str:
           </div>
           <div class="detail-grid">{rows}</div>
         </section>
+        """,
+    )
 
+
+def render_raw_stats_page(state: dict[str, Any], config: AppConfig) -> str:
+    raw_rows = "\n".join(
+        f"<tr><th>{_escape(raw_display_label(str(key)))}</th><td>{_escape(str(value))}</td></tr>"
+        for key, value in sorted(state.get("raw", {}).items())
+    )
+    if not raw_rows:
+        raw_rows = '<tr><td colspan="2" class="muted">No raw backend stats are available yet.</td></tr>'
+    return page_shell(
+        "Raw Backend Stats",
+        "raw",
+        f"""
         <section>
           <div class="section-head">
-            <h2>Raw Backend Stats</h2>
+            <div>
+              <h1>Raw Backend Stats</h1>
+              <p class="muted">Raw values from the active UPS backend.</p>
+            </div>
             <a class="text-link" href="/api/raw">Raw JSON</a>
           </div>
           <table>{raw_rows}</table>
@@ -330,32 +349,45 @@ def page_shell(title: str, active: str, content: str) -> str:
     .health {{ display:inline-flex; align-items:center; gap:8px; padding:6px 10px; border-radius:999px; font-weight:700; }}
     .health.ok {{ color:var(--good); background:#ecfdf3; }}
     .health.warn {{ color:var(--warn); background:#fff7ed; }}
-    .cards {{ display:grid; grid-template-columns: repeat(6, minmax(140px, 1fr)); gap: 10px; padding: 12px 0 18px; border-top:1px solid #edf1f5; border-bottom:1px solid #edf1f5; }}
+    .cards {{ display:grid; grid-template-columns: repeat(7, minmax(128px, 1fr)); gap: 10px; padding: 12px 0 18px; border-top:1px solid #edf1f5; border-bottom:1px solid #edf1f5; }}
     .metric {{ min-width:0; }}
     .metric-label {{ color:#344054; font-size:13px; margin-bottom:6px; }}
     .metric-value {{ font-weight:800; font-size:17px; color:#101828; overflow-wrap:anywhere; }}
     .metric-icon {{ color:var(--blue); font-weight:900; margin-right:6px; }}
-    .diagram-wrap {{ overflow-x:auto; padding: 18px 0 2px; }}
-    svg.power {{ width:100%; min-width:820px; height:360px; }}
+    .diagram-wrap {{ padding: 18px 0 2px; }}
+    .diagram-card {{ border:1px solid #e1e7ef; border-radius:8px; background:#fff; padding:12px; overflow:hidden; }}
+    svg.power {{ display:block; width:100%; height:auto; }}
+    svg.power.mobile {{ display:none; }}
     .path {{ stroke:#d8dee8; stroke-width:5; fill:none; stroke-linecap:round; stroke-linejoin:round; }}
-    .path.active {{ stroke:var(--blue); stroke-dasharray:12 8; animation: dash 1.2s linear infinite; }}
-    .path.standby {{ opacity:.55; }}
-    .path.solid.active {{ stroke-dasharray:none; animation:none; }}
-    .node {{ fill:#fff; stroke:#98a2b3; stroke-width:3; }}
-    .node.standby {{ fill:#98a2b3; }}
-    .node.active {{ stroke:var(--blue); filter: drop-shadow(0 2px 6px rgba(7,94,181,.20)); }}
+    .path.active {{ stroke:var(--blue); stroke-dasharray:none; filter: drop-shadow(0 1px 3px rgba(7,94,181,.22)); }}
+    .path.bypass-active {{ stroke:var(--good); }}
+    .path.standby {{ stroke:#c8d1dd; stroke-dasharray:9 9; opacity:.82; }}
+    .path.inactive {{ stroke:#e3e8f0; stroke-dasharray:8 10; opacity:.9; }}
+    .arrow {{ fill:var(--blue); }}
+    .arrow.bypass-active {{ fill:var(--good); }}
+    .node {{ fill:#fff; stroke:#98a2b3; stroke-width:2.5; }}
+    .node.active {{ stroke:var(--blue); filter: drop-shadow(0 2px 6px rgba(7,94,181,.18)); }}
+    .node.bypass-active {{ stroke:var(--good); filter: drop-shadow(0 2px 6px rgba(22,163,74,.18)); }}
     .node-fill {{ fill:#98a2b3; }}
     .node-fill.active {{ fill:var(--blue2); }}
-    .node-text {{ font: 15px system-ui, sans-serif; fill:#111827; text-anchor:middle; font-weight:700; }}
+    .node-fill.bypass-active {{ fill:var(--good); }}
+    .node-icon {{ fill:none; stroke:var(--blue); stroke-width:3; stroke-linecap:round; stroke-linejoin:round; }}
+    .node-icon.good {{ stroke:var(--good); }}
+    .node-icon.muted {{ stroke:#98a2b3; }}
+    .node-text {{ font: 15px system-ui, sans-serif; fill:#111827; text-anchor:middle; font-weight:800; }}
     .node-small {{ font: 13px system-ui, sans-serif; fill:#344054; text-anchor:middle; }}
     .node-caption {{ font: 12px system-ui, sans-serif; fill:var(--muted); text-anchor:middle; }}
-    .legend {{ display:flex; gap:14px; flex-wrap:wrap; color:var(--muted); font-size:13px; padding-top:8px; }}
-    .legend span::before {{ content:""; display:inline-block; width:22px; height:4px; border-radius:4px; margin-right:6px; vertical-align:middle; background:#d8dee8; }}
+    .path-label {{ font: 15px system-ui, sans-serif; fill:var(--blue); text-anchor:middle; font-weight:800; }}
+    .path-label.good {{ fill:var(--good); }}
+    .legend {{ display:flex; gap:14px; flex-wrap:wrap; color:var(--muted); font-size:13px; padding-top:10px; }}
+    .legend span::before {{ content:""; display:inline-block; width:24px; height:4px; border-radius:4px; margin-right:6px; vertical-align:middle; background:#d8dee8; }}
     .legend .active-leg::before {{ background:var(--blue); }}
-    .detail-grid {{ display:grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 10px; }}
-    .detail-item {{ border:1px solid #edf1f5; border-radius:8px; padding:10px 12px; background:#fbfcfe; }}
-    .detail-item dt {{ color:var(--muted); font-size:13px; }}
-    .detail-item dd {{ margin:4px 0 0; font-weight:700; overflow-wrap:anywhere; }}
+    .legend .bypass-leg::before {{ background:var(--good); }}
+    .legend .inactive-leg::before {{ background:#c8d1dd; }}
+    .detail-grid {{ display:grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 8px; }}
+    .detail-item {{ border:1px solid #edf1f5; border-radius:8px; padding:8px 10px; background:#fbfcfe; min-height:58px; }}
+    .detail-item dt {{ color:var(--muted); font-size:12px; line-height:1.25; }}
+    .detail-item dd {{ margin:3px 0 0; font-weight:700; line-height:1.25; overflow-wrap:anywhere; }}
     table {{ border-collapse: collapse; width: 100%; }}
     th, td {{ border-bottom: 1px solid #edf1f5; padding: .55rem; text-align: left; vertical-align:top; }}
     th {{ width: 18rem; color: #57606a; font-weight: 700; }}
@@ -372,7 +404,8 @@ def page_shell(title: str, active: str, content: str) -> str:
     .text-link {{ color:var(--blue); text-decoration:none; font-weight:700; }}
     .log-view {{ max-height: 68vh; overflow:auto; padding:14px; background:#0b1220; color:#d8e2f1; border-radius:8px; font: 13px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace; white-space:pre-wrap; }}
     @keyframes dash {{ to {{ stroke-dashoffset: -32; }} }}
-    @media (max-width: 880px) {{ .cards {{ grid-template-columns: repeat(2, minmax(130px, 1fr)); }} .topbar {{ align-items:flex-start; flex-direction:column; }} }}
+    @media (max-width: 980px) {{ .cards {{ grid-template-columns: repeat(3, minmax(130px, 1fr)); }} }}
+    @media (max-width: 700px) {{ main {{ padding:12px; }} section, .hero-panel {{ padding:14px; }} .cards {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }} .topbar {{ align-items:flex-start; flex-direction:column; }} svg.power.desktop {{ display:none; }} svg.power.mobile {{ display:block; }} .diagram-card {{ padding:8px; }} }}
   </style>
 </head>
 <body>
@@ -380,6 +413,7 @@ def page_shell(title: str, active: str, content: str) -> str:
     <a class="brand" href="/ui">PowerPi UPS Gateway</a>
     <nav>
       <a class="{_active(active, 'dashboard')}" href="/ui">Dashboard</a>
+      <a class="{_active(active, 'raw')}" href="/raw">Raw Stats</a>
       <a class="{_active(active, 'settings')}" href="/settings">Settings</a>
       <a class="{_active(active, 'logs')}" href="/logs">Logs</a>
       <a href="/metrics">Metrics</a>
@@ -398,6 +432,7 @@ def render_overview_cards(state: dict[str, Any]) -> str:
         ("Battery Capacity", "battery_charge_percent", display_value("battery_charge_percent", state.get("battery_charge_percent"))),
         ("Load", "load_percent", display_value("load_percent", state.get("load_percent"))),
         ("Battery Voltage", "battery_voltage", display_value("battery_voltage", state.get("battery_voltage"))),
+        ("Input Voltage", "input_voltage", display_value("input_voltage", state.get("input_voltage"))),
         ("Self Test", "status_text", state.get("raw", {}).get("SELFTEST", "-")),
     ]
     html = []
@@ -411,15 +446,31 @@ def render_overview_cards(state: dict[str, Any]) -> str:
 
 def render_power_flow_diagram(state: dict[str, Any]) -> str:
     mode = power_flow_mode(state)
-    line_active = " active" if mode == "line" else " standby"
-    battery_active = " active" if mode == "battery" else " standby"
-    bypass_active = " active" if mode == "bypass" else " standby"
-    inverter_active = " active" if mode == "battery" else " standby"
+    line_active = " active" if mode in {"line", "online_conversion"} else " inactive"
+    battery_active = " active" if mode == "battery" else " inactive"
+    bypass_active = " bypass-active" if mode == "bypass" else " standby"
+    inverter_active = " active" if mode in {"line", "battery", "online_conversion"} else " inactive"
     avr_active = " active" if mode in {"line", "online_conversion"} else " standby"
+    input_node = line_active if mode in {"line", "online_conversion"} else bypass_active if mode == "bypass" else " inactive"
+    input_icon = "" if mode in {"line", "online_conversion", "bypass"} else " muted"
+    avr_icon = "" if mode in {"line", "online_conversion"} else " muted"
+    battery_icon = "" if mode == "battery" else " muted"
+    inverter_icon = "" if mode in {"line", "battery", "online_conversion"} else " muted"
+    load_icon = " good" if mode == "bypass" else inverter_icon
+    line_marker = "arrow-blue" if mode in {"line", "online_conversion"} else "arrow-muted"
+    battery_marker = "arrow-blue" if mode == "battery" else "arrow-muted"
+    inverter_marker = "arrow-blue" if mode in {"line", "battery", "online_conversion"} else "arrow-muted"
+    bypass_marker = "arrow-green" if mode == "bypass" else "arrow-muted"
+    mobile_line_marker = "m-arrow-blue" if mode in {"line", "online_conversion"} else "m-arrow-muted"
+    mobile_battery_marker = "m-arrow-blue" if mode == "battery" else "m-arrow-muted"
+    mobile_inverter_marker = "m-arrow-blue" if mode in {"line", "battery", "online_conversion"} else "m-arrow-muted"
+    mobile_bypass_marker = "m-arrow-green" if mode == "bypass" else "m-arrow-muted"
     input_v = display_value("input_voltage", state.get("input_voltage"))
     battery = display_value("battery_charge_percent", state.get("battery_charge_percent"))
+    battery_v = display_value("battery_voltage", state.get("battery_voltage"))
     load = display_value("load_percent", state.get("load_percent"))
     output_v = display_value("output_voltage", state.get("output_voltage"))
+    active_path_class = "bypass-leg" if mode == "bypass" else "active-leg"
     mode_label = {
         "line": "Line / AVR path active",
         "battery": "Battery path active",
@@ -429,57 +480,136 @@ def render_power_flow_diagram(state: dict[str, Any]) -> str:
     }[mode]
     return f"""
     <div class="diagram-wrap">
-      <svg class="power" viewBox="0 0 1040 360" role="img" aria-label="UPS power flow diagram">
-        <path class="path{bypass_active}" d="M195 95 H835 V175" />
-        <path class="path{line_active}" d="M155 175 H390" />
-        <path class="path{line_active}" d="M510 175 H835" />
-        <path class="path{battery_active}" d="M455 278 V222 H650 V175" />
-        <path class="path{inverter_active}" d="M650 175 H835" />
+      <div class="diagram-card">
+        <svg class="power desktop" viewBox="0 0 1040 430" role="img" aria-label="UPS power flow diagram">
+          <defs>
+            <marker id="arrow-blue" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path class="arrow" d="M0 0 L10 5 L0 10 Z" />
+            </marker>
+            <marker id="arrow-green" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path class="arrow bypass-active" d="M0 0 L10 5 L0 10 Z" />
+            </marker>
+            <marker id="arrow-muted" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path fill="#c8d1dd" d="M0 0 L10 5 L0 10 Z" />
+            </marker>
+          </defs>
 
-        <g>
-          <path d="M92 120 L126 120 L109 88 Z" fill="none" stroke="var(--blue)" stroke-width="4" />
-          <line x1="109" y1="120" x2="109" y2="152" stroke="var(--blue)" stroke-width="4" />
-          <text class="node-text" x="109" y="202">Input</text>
-          <text class="node-small" x="109" y="222">{_escape(input_v)}</text>
-        </g>
+          <path class="path{bypass_active}" marker-end="url(#{bypass_marker})" d="M110 224 C180 224 180 108 250 108 H795 C870 108 870 224 928 224" />
+          <path class="path{line_active}" marker-end="url(#{line_marker})" d="M138 224 H310" />
+          <path class="path{line_active}" marker-end="url(#{line_marker})" d="M430 224 H615" />
+          <path class="path{inverter_active}" marker-end="url(#{inverter_marker})" d="M735 224 H920" />
+          <path class="path{battery_active}" marker-end="url(#{battery_marker})" d="M450 336 V274 H675 V224" />
 
-        <g>
-          <rect class="node{avr_active}" x="390" y="125" width="120" height="100" rx="12" />
-          <rect class="node-fill{avr_active}" x="413" y="149" width="74" height="24" rx="5" />
-          <text x="450" y="167" fill="#fff" text-anchor="middle" font-size="16" font-weight="700">AVR</text>
-          <text class="node-caption" x="450" y="195">Line conditioner</text>
-          <text class="node-text" x="450" y="250">Line / AVR</text>
-        </g>
+          <text class="path-label{' good' if mode == 'bypass' else ''}" x="520" y="76">{_escape(mode_label)}</text>
+          <text class="node-text" x="520" y="98">Bypass Path</text>
+          <text class="node-caption" x="520" y="118">{'Active' if mode == 'bypass' else 'Standby'}</text>
 
-        <g>
-          <circle class="node{bypass_active}" cx="520" cy="95" r="34" />
-          <text x="520" y="102" fill="#fff" text-anchor="middle" font-size="23">~</text>
-          <text class="node-text" x="520" y="145">Bypass</text>
-        </g>
+          <g>
+            <circle class="node{input_node}" cx="100" cy="224" r="34" />
+            <path class="node-icon{input_icon}" d="M92 214 v16 m16-16 v16 m-21-9 h26 m-16-7 v-12 m10 19 v-19" />
+            <text class="node-text" x="100" y="276">Input</text>
+            <text class="node-small" x="100" y="298">{_escape(input_v)}</text>
+          </g>
 
-        <g>
-          <circle class="node{inverter_active}" cx="650" cy="175" r="38" />
-          <text x="650" y="169" fill="#fff" text-anchor="middle" font-size="21">=</text>
-          <text x="650" y="190" fill="#fff" text-anchor="middle" font-size="23">~</text>
-          <text class="node-text" x="650" y="250">Inverter</text>
-        </g>
+          <g>
+            <rect class="node{avr_active}" x="310" y="184" width="120" height="80" rx="10" />
+            <path class="node-icon{avr_icon}" d="M350 218 q10-18 20 0 t20 0 m-40 18 q10-18 20 0 t20 0" />
+            <text class="node-text" x="370" y="292">AVR</text>
+            <text class="node-caption" x="370" y="314">Line conditioner</text>
+          </g>
 
-        <g>
-          <rect x="428" y="278" width="54" height="30" rx="4" fill="none" stroke="var(--blue)" stroke-width="4" />
-          <rect x="482" y="287" width="7" height="12" rx="2" fill="var(--blue)" />
-          <text class="node-text" x="455" y="335">Battery</text>
-          <text class="node-small" x="455" y="323">{_escape(battery)}</text>
-        </g>
+          <g>
+            <rect class="node{bypass_active}" x="492" y="132" width="56" height="56" rx="8" />
+            <path class="node-icon{' good' if mode == 'bypass' else ' muted'}" d="M507 158 q8-12 16 0 t16 0 m-31 14 h24" />
+            <text class="node-text" x="520" y="212">Bypass</text>
+          </g>
 
-        <g>
-          <rect x="875" y="137" width="86" height="76" rx="10" fill="#f8fafc" stroke="var(--blue)" stroke-width="3" />
-          <path d="M905 156 v37 m-10-25 h20 m-16 0 v-14 m12 14 v-14" fill="none" stroke="var(--blue)" stroke-width="4" stroke-linecap="round" />
-          <text class="node-text" x="918" y="238">Load</text>
-          <text class="node-small" x="918" y="258">{_escape(load)}</text>
-          <text class="node-small" x="918" y="278">{_escape(output_v)}</text>
-        </g>
-      </svg>
-      <div class="legend"><span class="active-leg">{_escape(mode_label)}</span><span>Standby path</span></div>
+          <g>
+            <rect class="node{inverter_active}" x="615" y="184" width="120" height="80" rx="10" />
+            <path class="node-icon{inverter_icon}" d="M665 214 h22 m-22 18 h22 m-22 19 q10-16 20 0 t20 0" />
+            <text class="node-text" x="675" y="292">Inverter</text>
+          </g>
+
+          <g>
+            <rect class="node{battery_active}" x="420" y="336" width="60" height="48" rx="7" />
+            <path class="node-icon{battery_icon}" d="M440 350 h20 v22 h-20 z m6-6 h8 m-8 18 h8" />
+            <text class="node-text" x="450" y="408">Battery</text>
+            <text class="node-small" x="450" y="324">{_escape(battery)}</text>
+            <text class="node-caption" x="450" y="422">{_escape(battery_v)}</text>
+          </g>
+
+          <g>
+            <circle class="node{bypass_active if mode == 'bypass' else inverter_active}" cx="940" cy="224" r="34" />
+            <path class="node-icon{load_icon}" d="M931 216 v19 m18-19 v19 m-23-10 h28 m-16-9 v-13 m10 22 v-22" />
+            <text class="node-text" x="940" y="276">Load</text>
+            <text class="node-small" x="940" y="298">{_escape(load)}</text>
+            <text class="node-caption" x="940" y="318">{_escape(output_v)}</text>
+          </g>
+        </svg>
+
+        <svg class="power mobile" viewBox="0 0 360 620" role="img" aria-label="UPS power flow diagram">
+          <defs>
+            <marker id="m-arrow-blue" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+              <path class="arrow" d="M0 0 L10 5 L0 10 Z" />
+            </marker>
+            <marker id="m-arrow-green" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+              <path class="arrow bypass-active" d="M0 0 L10 5 L0 10 Z" />
+            </marker>
+            <marker id="m-arrow-muted" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+              <path fill="#c8d1dd" d="M0 0 L10 5 L0 10 Z" />
+            </marker>
+          </defs>
+
+          <path class="path{line_active}" marker-end="url(#{mobile_line_marker})" d="M180 72 V154" />
+          <path class="path{line_active}" marker-end="url(#{mobile_line_marker})" d="M180 226 V306" />
+          <path class="path{inverter_active}" marker-end="url(#{mobile_inverter_marker})" d="M180 378 V470" />
+          <path class="path{battery_active}" marker-end="url(#{mobile_battery_marker})" d="M80 330 H142" />
+          <path class="path{bypass_active}" marker-end="url(#{mobile_bypass_marker})" d="M180 92 H78 Q54 92 54 116 V500 Q54 524 78 524 H143" />
+
+          <g>
+            <circle class="node{input_node}" cx="180" cy="54" r="30" />
+            <path class="node-icon{input_icon}" d="M172 45 v18 m16-18 v18 m-21-9 h26 m-16-8 v-12 m10 20 v-20" />
+            <text class="node-text" x="245" y="50">Input</text>
+            <text class="node-small" x="245" y="70">{_escape(input_v)}</text>
+          </g>
+
+          <g>
+            <rect class="node{bypass_active}" x="32" y="166" width="48" height="48" rx="8" />
+            <path class="node-icon{' good' if mode == 'bypass' else ' muted'}" d="M43 188 q7-10 14 0 t14 0 m-27 12 h22" />
+            <text class="node-text" x="56" y="238">Bypass</text>
+            <text class="node-caption" x="56" y="256">{'Active' if mode == 'bypass' else 'Standby'}</text>
+          </g>
+
+          <g>
+            <rect class="node{avr_active}" x="142" y="154" width="76" height="72" rx="10" />
+            <path class="node-icon{avr_icon}" d="M164 184 q8-14 16 0 t16 0 m-32 18 q8-14 16 0 t16 0" />
+            <text class="node-text" x="252" y="188">AVR</text>
+            <text class="node-caption" x="252" y="207">Line conditioner</text>
+          </g>
+
+          <g>
+            <rect class="node{battery_active}" x="36" y="306" width="56" height="48" rx="8" />
+            <path class="node-icon{battery_icon}" d="M55 320 h18 v22 h-18 z m5-6 h8 m-7 18 h7" />
+            <text class="node-small" x="64" y="378">{_escape(battery)}</text>
+            <text class="node-caption" x="64" y="396">{_escape(battery_v)}</text>
+          </g>
+
+          <g>
+            <rect class="node{inverter_active}" x="142" y="306" width="76" height="72" rx="10" />
+            <path class="node-icon{inverter_icon}" d="M170 332 h18 m-18 16 h18 m-18 20 q8-13 16 0 t16 0" />
+            <text class="node-text" x="252" y="346">Inverter</text>
+          </g>
+
+          <g>
+            <circle class="node{bypass_active if mode == 'bypass' else inverter_active}" cx="180" cy="500" r="30" />
+            <path class="node-icon{load_icon}" d="M172 492 v18 m16-18 v18 m-21-9 h26 m-16-8 v-12 m10 20 v-20" />
+            <text class="node-text" x="252" y="492">Load</text>
+            <text class="node-small" x="252" y="512">{_escape(load)}</text>
+            <text class="node-caption" x="252" y="532">{_escape(output_v)}</text>
+          </g>
+        </svg>
+      </div>
+      <div class="legend"><span class="{active_path_class}">{_escape(mode_label)}</span><span class="bypass-leg">Bypass path</span><span class="inactive-leg">Inactive / standby path</span></div>
     </div>
     """
 

@@ -32,3 +32,5 @@ This project follows the spirit of Keep a Changelog. Update this file for every 
 - Corrected APC PowerNet battery OID mappings and SNMP types for LibreNMS compatibility.
 - Added APC PowerNet input/output frequency, high-precision voltage/load/current, output status, and apparent-load mappings for LibreNMS.
 - Expanded Home Assistant MQTT discovery metadata so normalized and known raw APC sensors publish correct units, device classes, state classes, and numeric extraction templates.
+- Improved the Web UI UPS power-flow diagram with separate desktop/mobile layouts, a left-side bypass path, clearer active/standby styling, and live values on diagram components.
+- Moved Web UI raw backend stats to a dedicated Raw Stats page and tightened UPS Details card spacing.
