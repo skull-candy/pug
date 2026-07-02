@@ -33,7 +33,7 @@ def main(argv: list[str] | None = None) -> int:
         config = load_config(args.config)
     except ConfigError as exc:
         parser.error(str(exc))
-    configure_logging(config.logging.level)
+    configure_logging(config.logging.level, config.logging.file_path)
 
     stop = threading.Event()
     signal.signal(signal.SIGTERM, lambda *_: stop.set())

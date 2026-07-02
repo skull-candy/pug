@@ -11,17 +11,24 @@ When enabled, the HTTP frontend serves:
 - `/metrics`: Prometheus text exposition.
 - `/homeassistant`: Home Assistant MQTT discovery config payloads as JSON.
 - `/ui` and `/`: small status page.
+- `/settings`: configuration form.
+- `/logs`: bounded log tail view.
 - `/healthz`: health check.
 
-The Web UI at `/ui` includes a configuration form for:
+The Web UI at `/ui` is a dashboard with metric cards, an animated power-flow diagram, UPS details, and raw backend stats.
+
+The settings page at `/settings` includes a configuration form for:
 
 - Backend type, command, and poll interval.
 - SNMP enablement, listen address, port, community, and developer logging.
 - REST API, Prometheus, and Home Assistant endpoint toggles.
 - MQTT enablement, broker, topics, credentials, and publish interval.
 - Logging level.
+- Log file path and log tail line count.
 
 Saving the form writes `config.yaml`. Restart the service to apply backend, listener, SNMP, and MQTT runtime changes.
+
+The logs page reads only the last configured number of lines from the configured log file. It does not load the full file into memory.
 
 ## MQTT
 

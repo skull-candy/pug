@@ -73,9 +73,11 @@ HTTP defaults to port `8080`:
 - `http://<host>:8080/api/raw`
 - `http://<host>:8080/metrics`
 - `http://<host>:8080/homeassistant`
-- `http://<host>:8080/ui`
+- `http://<host>:8080/ui` dashboard with power-flow diagram and UPS details
+- `http://<host>:8080/settings` configuration
+- `http://<host>:8080/logs` bounded log tail view
 
-The Web UI is the always-on control plane. Use it to edit backend, SNMP, API, Prometheus, Home Assistant, MQTT, and logging settings. Save writes `config.yaml`; restart the service to apply backend, listener, SNMP, and MQTT runtime changes.
+The Web UI is the always-on control plane. The dashboard shows an interactive UPS power-flow diagram, overview cards, UPS details, and raw backend stats. Settings live on `/settings`; use that page to edit backend, SNMP, API, Prometheus, Home Assistant, MQTT, and logging settings. Save writes `config.yaml`; restart the service to apply backend, listener, SNMP, and MQTT runtime changes. Logs live on `/logs` and only tail the configured number of lines, so huge log files do not slow the UI.
 
 All raw backend stats from `apcaccess` or NUT are preserved in `UPSState.raw` and published through the enabled frontends:
 

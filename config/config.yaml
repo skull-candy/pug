@@ -31,3 +31,5 @@ mqtt:
 
 logging:
   level: INFO
+  file_path: "/var/log/pug/pug.log"
+  web_tail_lines: 300

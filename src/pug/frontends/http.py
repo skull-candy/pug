@@ -68,7 +68,19 @@ class HttpFrontend:
                     self._send(
                         200,
                         "text/html; charset=utf-8",
-                        render_control_page(state.to_dict(), config).encode(),
+                        render_dashboard_page(state.to_dict(), config).encode(),
+                    )
+                elif self.path == "/settings":
+                    self._send(
+                        200,
+                        "text/html; charset=utf-8",
+                        render_settings_page(config).encode(),
+                    )
+                elif self.path == "/logs":
+                    self._send(
+                        200,
+                        "text/html; charset=utf-8",
+                        render_logs_page(config, tail_log_lines(config.logging.file_path, config.logging.web_tail_lines)).encode(),
                     )
                 elif self.path == "/api/state":
                     if config.http.api_enabled:
@@ -190,7 +202,11 @@ def config_from_form(form: dict[str, list[str]]) -> AppConfig:
             password=_field(form, "mqtt_password"),
             publish_interval_seconds=float(_field(form, "mqtt_publish_interval_seconds")),
         ),
-        logging=LoggingConfig(level=_field(form, "logging_level")),
+        logging=LoggingConfig(
+            level=_field(form, "logging_level"),
+            file_path=_field(form, "logging_file_path"),
+            web_tail_lines=int(_field(form, "logging_web_tail_lines")),
+        ),
     )
     validate_config(config)
     return config
@@ -229,68 +245,415 @@ def config_to_public_dict(config: AppConfig) -> dict[str, Any]:
             "password": "********" if config.mqtt.password else "",
             "publish_interval_seconds": config.mqtt.publish_interval_seconds,
         },
-        "logging": {"level": config.logging.level},
+        "logging": {
+            "level": config.logging.level,
+            "file_path": config.logging.file_path,
+            "web_tail_lines": config.logging.web_tail_lines,
+        },
     }
 
 
 def render_control_page(state: dict[str, Any], config: AppConfig) -> str:
+    return render_dashboard_page(state, config)
+
+
+def render_dashboard_page(state: dict[str, Any], config: AppConfig) -> str:
     title = _escape(str(state["name"]))
-    rows = "\n".join(
-        f"<tr><th>{_escape(key)}</th><td>{_escape(str(value))}</td></tr>"
-        for key, value in state.items()
-        if key != "raw"
-    )
+    rows = render_detail_rows(state)
     raw_rows = "\n".join(
-        f"<tr><th>{_escape(str(key))}</th><td>{_escape(str(value))}</td></tr>"
+        f"<tr><th>{_escape(raw_display_label(str(key)))}</th><td>{_escape(str(value))}</td></tr>"
         for key, value in sorted(state.get("raw", {}).items())
     )
-    form = render_config_form(config)
+    overview = render_overview_cards(state)
+    diagram = render_power_flow_diagram(state)
+    return page_shell(
+        title,
+        "dashboard",
+        f"""
+        <section class="hero-panel">
+          <div class="hero-head">
+            <div>
+              <h1>{title}</h1>
+              <p class="muted">{_escape(display_value("status_text", state.get("status_text", "-")))}</p>
+            </div>
+            <span class="health {'ok' if state.get('online') else 'warn'}">{'Healthy' if state.get('online') else 'Attention'}</span>
+          </div>
+          {overview}
+          {diagram}
+        </section>
+
+        <section>
+          <div class="section-head">
+            <h2>UPS Details</h2>
+            <a class="text-link" href="/api/state">JSON</a>
+          </div>
+          <div class="detail-grid">{rows}</div>
+        </section>
+
+        <section>
+          <div class="section-head">
+            <h2>Raw Backend Stats</h2>
+            <a class="text-link" href="/api/raw">Raw JSON</a>
+          </div>
+          <table>{raw_rows}</table>
+        </section>
+        """,
+    )
+
+
+def page_shell(title: str, active: str, content: str) -> str:
     return f"""<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{title} - PowerPi UPS Gateway</title>
+  <meta http-equiv="refresh" content="30">
+  <title>{_escape(title)} - PowerPi UPS Gateway</title>
   <style>
-    body {{ font: 16px system-ui, sans-serif; margin: 0; color: #17202a; background: #f6f8fa; }}
-    main {{ max-width: 1120px; margin: 0 auto; padding: 24px; }}
-    section {{ background: #fff; border: 1px solid #d8dee4; border-radius: 8px; padding: 18px; margin: 0 0 18px; }}
-    h1, h2 {{ margin-top: 0; }}
+    :root {{ color-scheme: light; --blue:#075eb5; --blue2:#0b73ce; --ink:#17202a; --muted:#667085; --line:#d7dee8; --bg:#f3f6fa; --card:#ffffff; --good:#16a34a; --warn:#d97706; --bad:#dc2626; }}
+    * {{ box-sizing: border-box; }}
+    body {{ font: 15px/1.45 system-ui, -apple-system, Segoe UI, sans-serif; margin: 0; color: var(--ink); background: var(--bg); }}
+    .topbar {{ position: sticky; top: 0; z-index: 5; display:flex; align-items:center; justify-content:space-between; gap:16px; padding: 12px 24px; border-bottom:1px solid var(--line); background: rgba(255,255,255,.94); backdrop-filter: blur(10px); }}
+    .brand {{ font-weight: 800; color: var(--blue); text-decoration:none; }}
+    nav {{ display:flex; gap:8px; flex-wrap:wrap; }}
+    nav a, .button {{ display:inline-flex; align-items:center; justify-content:center; min-height:36px; padding:8px 12px; border-radius:7px; text-decoration:none; color:var(--ink); border:1px solid transparent; }}
+    nav a.active {{ background:#eaf3ff; border-color:#bddcff; color:var(--blue); }}
+    .button {{ background:var(--blue); color:#fff; border:0; }}
+    .button.secondary {{ background:#eef2f7; color:var(--ink); }}
+    main {{ max-width: 1180px; margin: 0 auto; padding: 18px; }}
+    section, .hero-panel {{ background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 18px; margin: 0 0 16px; box-shadow: 0 1px 2px rgba(16,24,40,.04); }}
+    h1, h2 {{ margin: 0; letter-spacing: 0; }}
+    h1 {{ font-size: 22px; }}
+    h2 {{ font-size: 17px; }}
+    .muted {{ color: var(--muted); margin: 4px 0 0; }}
+    .hero-head, .section-head {{ display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:16px; }}
+    .health {{ display:inline-flex; align-items:center; gap:8px; padding:6px 10px; border-radius:999px; font-weight:700; }}
+    .health.ok {{ color:var(--good); background:#ecfdf3; }}
+    .health.warn {{ color:var(--warn); background:#fff7ed; }}
+    .cards {{ display:grid; grid-template-columns: repeat(6, minmax(140px, 1fr)); gap: 10px; padding: 12px 0 18px; border-top:1px solid #edf1f5; border-bottom:1px solid #edf1f5; }}
+    .metric {{ min-width:0; }}
+    .metric-label {{ color:#344054; font-size:13px; margin-bottom:6px; }}
+    .metric-value {{ font-weight:800; font-size:17px; color:#101828; overflow-wrap:anywhere; }}
+    .metric-icon {{ color:var(--blue); font-weight:900; margin-right:6px; }}
+    .diagram-wrap {{ overflow-x:auto; padding: 18px 0 2px; }}
+    svg.power {{ width:100%; min-width:760px; height:300px; }}
+    .bus {{ stroke:var(--blue); stroke-width:4; stroke-dasharray:10 6; animation: dash 1.3s linear infinite; }}
+    .bus.idle {{ animation:none; opacity:.4; }}
+    .bypass {{ stroke:#d8dee8; stroke-width:4; fill:none; }}
+    .node {{ fill:var(--blue2); stroke:#fff; stroke-width:3; }}
+    .node-text {{ font: 15px system-ui, sans-serif; fill:#111827; text-anchor:middle; }}
+    .node-small {{ font: 13px system-ui, sans-serif; fill:#344054; text-anchor:middle; }}
+    .detail-grid {{ display:grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 10px; }}
+    .detail-item {{ border:1px solid #edf1f5; border-radius:8px; padding:10px 12px; background:#fbfcfe; }}
+    .detail-item dt {{ color:var(--muted); font-size:13px; }}
+    .detail-item dd {{ margin:4px 0 0; font-weight:700; overflow-wrap:anywhere; }}
     table {{ border-collapse: collapse; width: 100%; }}
-    th, td {{ border-bottom: 1px solid #d8dee4; padding: .5rem; text-align: left; }}
-    th {{ width: 18rem; color: #57606a; font-weight: 600; }}
+    th, td {{ border-bottom: 1px solid #edf1f5; padding: .55rem; text-align: left; vertical-align:top; }}
+    th {{ width: 18rem; color: #57606a; font-weight: 700; }}
     form {{ display: grid; gap: 16px; }}
-    fieldset {{ border: 1px solid #d8dee4; border-radius: 8px; padding: 14px; }}
-    legend {{ font-weight: 700; padding: 0 6px; }}
+    fieldset {{ border: 1px solid var(--line); border-radius: 8px; padding: 14px; }}
+    legend {{ font-weight: 800; padding: 0 6px; }}
     label {{ display: grid; gap: 4px; margin: 10px 0; }}
-    input, select {{ font: inherit; padding: 8px; border: 1px solid #afb8c1; border-radius: 6px; }}
+    input, select {{ font: inherit; padding: 9px; border: 1px solid #afb8c1; border-radius: 6px; background:#fff; }}
     input[type="checkbox"] {{ width: 18px; height: 18px; }}
     .check {{ display: flex; align-items: center; gap: 8px; }}
     .grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px 18px; }}
-    button {{ font: inherit; padding: 10px 14px; border: 0; border-radius: 6px; background: #0969da; color: white; cursor: pointer; }}
-    .hint {{ color: #57606a; font-size: 14px; }}
+    button {{ font: inherit; padding: 10px 14px; border: 0; border-radius: 6px; background: var(--blue); color: white; cursor: pointer; }}
+    .hint {{ color: var(--muted); font-size: 14px; }}
+    .text-link {{ color:var(--blue); text-decoration:none; font-weight:700; }}
+    .log-view {{ max-height: 68vh; overflow:auto; padding:14px; background:#0b1220; color:#d8e2f1; border-radius:8px; font: 13px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace; white-space:pre-wrap; }}
+    @keyframes dash {{ to {{ stroke-dashoffset: -32; }} }}
+    @media (max-width: 880px) {{ .cards {{ grid-template-columns: repeat(2, minmax(130px, 1fr)); }} .topbar {{ align-items:flex-start; flex-direction:column; }} }}
   </style>
 </head>
 <body>
-  <main>
-    <h1>{title}</h1>
-    <section>
-      <h2>Status</h2>
-      <table>{rows}</table>
-    </section>
-    <section>
-      <h2>Raw Backend Stats</h2>
-      <table>{raw_rows}</table>
-    </section>
-    <section>
-      <h2>Configuration</h2>
-      <p class="hint">Save writes config.yaml. Restart the service to apply backend, listener, SNMP, and MQTT runtime changes.</p>
-      {form}
-    </section>
-  </main>
+  <header class="topbar">
+    <a class="brand" href="/ui">PowerPi UPS Gateway</a>
+    <nav>
+      <a class="{_active(active, 'dashboard')}" href="/ui">Dashboard</a>
+      <a class="{_active(active, 'settings')}" href="/settings">Settings</a>
+      <a class="{_active(active, 'logs')}" href="/logs">Logs</a>
+      <a href="/metrics">Metrics</a>
+    </nav>
+  </header>
+  <main>{content}</main>
 </body>
 </html>
 """
+
+
+def render_overview_cards(state: dict[str, Any]) -> str:
+    cards = [
+        ("Mode", "online", "Line mode" if state.get("online") else "Battery/unknown"),
+        ("Remaining Time", "runtime_minutes", display_value("runtime_minutes", state.get("runtime_minutes"))),
+        ("Battery Capacity", "battery_charge_percent", display_value("battery_charge_percent", state.get("battery_charge_percent"))),
+        ("Load", "load_percent", display_value("load_percent", state.get("load_percent"))),
+        ("Battery Voltage", "battery_voltage", display_value("battery_voltage", state.get("battery_voltage"))),
+        ("Self Test", "status_text", state.get("raw", {}).get("SELFTEST", "-")),
+    ]
+    html = []
+    for label, icon_key, value in cards:
+        html.append(
+            f'<div class="metric"><div class="metric-label">{_escape(label)}</div>'
+            f'<div class="metric-value"><span class="metric-icon">{metric_icon(icon_key)}</span>{_escape(str(value))}</div></div>'
+        )
+    return '<div class="cards">' + "".join(html) + "</div>"
+
+
+def render_power_flow_diagram(state: dict[str, Any]) -> str:
+    active_class = "" if state.get("online") or state.get("on_battery") else " idle"
+    input_v = display_value("input_voltage", state.get("input_voltage"))
+    battery = display_value("battery_charge_percent", state.get("battery_charge_percent"))
+    load = display_value("load_percent", state.get("load_percent"))
+    output_v = display_value("output_voltage", state.get("output_voltage"))
+    return f"""
+    <div class="diagram-wrap">
+      <svg class="power" viewBox="0 0 980 300" role="img" aria-label="UPS power flow diagram">
+        <path class="bypass" d="M310 70 H700 V165" />
+        <line class="bus{active_class}" x1="135" y1="165" x2="840" y2="165" />
+        <line class="bus{active_class}" x1="490" y1="165" x2="490" y2="245" />
+        <text class="node-text" x="95" y="140">Input</text>
+        <text class="node-small" x="95" y="160">{_escape(input_v)}</text>
+        <circle class="node" cx="340" cy="165" r="38" />
+        <text x="340" y="160" fill="#fff" text-anchor="middle" font-size="24">~</text>
+        <text x="340" y="181" fill="#fff" text-anchor="middle" font-size="22">=</text>
+        <text class="node-text" x="340" y="225">Rectifier</text>
+        <circle class="node" cx="490" cy="70" r="38" />
+        <text x="490" y="67" fill="#fff" text-anchor="middle" font-size="24">~</text>
+        <text x="490" y="89" fill="#fff" text-anchor="middle" font-size="24">~</text>
+        <text class="node-text" x="490" y="135">Bypass</text>
+        <circle class="node" cx="640" cy="165" r="38" />
+        <text x="640" y="160" fill="#fff" text-anchor="middle" font-size="22">=</text>
+        <text x="640" y="181" fill="#fff" text-anchor="middle" font-size="24">~</text>
+        <text class="node-text" x="640" y="225">Inverter</text>
+        <rect x="468" y="248" width="44" height="24" rx="3" fill="none" stroke="var(--blue)" stroke-width="4" />
+        <text class="node-small" x="490" y="292">{_escape(battery)}</text>
+        <text class="node-text" x="895" y="155">Load</text>
+        <text class="node-small" x="895" y="178">{_escape(load)}</text>
+        <text class="node-small" x="895" y="198">{_escape(output_v)}</text>
+      </svg>
+    </div>
+    """
+
+
+def render_detail_rows(state: dict[str, Any]) -> str:
+    preferred = [
+        "manufacturer",
+        "model",
+        "name",
+        "serial",
+        "firmware",
+        "status_text",
+        "online",
+        "on_battery",
+        "replace_battery",
+        "battery_charge_percent",
+        "runtime_minutes",
+        "battery_voltage",
+        "input_voltage",
+        "output_voltage",
+        "output_current",
+        "line_frequency",
+        "load_percent",
+        "internal_temperature_c",
+        "manufacture_date",
+        "battery_date",
+        "last_update",
+        "source_backend",
+    ]
+    keys = [key for key in preferred if key in state]
+    keys.extend(key for key in state if key not in keys and key != "raw")
+    return "".join(
+        f'<dl class="detail-item"><dt>{_escape(display_label(key))}</dt><dd>{_escape(display_value(key, state.get(key)))}</dd></dl>'
+        for key in keys
+    )
+
+
+def tail_log_lines(path: str, max_lines: int) -> list[str]:
+    if max_lines <= 0:
+        return []
+    log_path = Path(path)
+    if not log_path.exists():
+        return [f"Log file does not exist yet: {path}"]
+    # Read from the end in bounded chunks so very large logs do not slow the UI.
+    chunk_size = 8192
+    data = b""
+    with log_path.open("rb") as handle:
+        handle.seek(0, 2)
+        position = handle.tell()
+        while position > 0 and data.count(b"\n") <= max_lines:
+            read_size = min(chunk_size, position)
+            position -= read_size
+            handle.seek(position)
+            data = handle.read(read_size) + data
+    return data.decode("utf-8", errors="replace").splitlines()[-max_lines:]
+
+
+def metric_icon(key: str) -> str:
+    return {
+        "online": "◇",
+        "runtime_minutes": "◴",
+        "battery_charge_percent": "▮",
+        "load_percent": "▣",
+        "battery_voltage": "▾",
+        "status_text": "●",
+    }.get(key, "•")
+
+
+def _active(active: str, page: str) -> str:
+    return "active" if active == page else ""
+
+
+def render_settings_page(config: AppConfig) -> str:
+    return page_shell(
+        "Settings",
+        "settings",
+        f"""
+        <section>
+          <h1>Settings</h1>
+          <p class="muted">Save writes config.yaml. Restart the service to apply backend, listener, SNMP, and MQTT runtime changes.</p>
+          {render_config_form(config)}
+        </section>
+        """,
+    )
+
+
+def render_logs_page(config: AppConfig, lines: list[str]) -> str:
+    log_lines = "\n".join(_escape(line.rstrip("\n")) for line in lines)
+    return page_shell(
+        "Logs",
+        "logs",
+        f"""
+        <section>
+          <div class="section-head">
+            <div>
+              <h1>Logs</h1>
+              <p class="muted">Showing the last {config.logging.web_tail_lines} lines from {_escape(config.logging.file_path)}.</p>
+            </div>
+            <a class="button secondary" href="/logs">Refresh</a>
+          </div>
+          <pre class="log-view">{log_lines or 'No log lines available.'}</pre>
+        </section>
+        """,
+    )
+
+
+DISPLAY_LABELS = {
+    "manufacturer": "Manufacturer",
+    "model": "Model",
+    "name": "UPS Name",
+    "serial": "Serial Number",
+    "firmware": "Firmware",
+    "manufacture_date": "Manufacture Date",
+    "battery_date": "Battery Date",
+    "status_text": "UPS Status",
+    "online": "Online",
+    "on_battery": "On Battery",
+    "replace_battery": "Replace Battery",
+    "battery_charge_percent": "Battery Charge",
+    "runtime_minutes": "Runtime Remaining",
+    "seconds_on_battery": "Seconds on Battery",
+    "battery_voltage": "Battery Voltage",
+    "input_voltage": "Input Voltage",
+    "output_voltage": "Output Voltage",
+    "output_current": "Output Current",
+    "line_frequency": "Line Frequency",
+    "load_percent": "Load",
+    "load_va_percent": "Load VA",
+    "internal_temperature_c": "Internal Temperature",
+    "nominal_output_voltage": "Nominal Output Voltage",
+    "nominal_power_watts": "Nominal Power",
+    "nominal_va": "Nominal VA",
+    "min_battery_charge_percent": "Minimum Battery Charge",
+    "min_runtime_minutes": "Minimum Runtime",
+    "last_update": "Last Update",
+    "source_backend": "Source Backend",
+}
+
+RAW_LABELS = {
+    "APC": "APC Protocol",
+    "DATE": "Sample Time",
+    "HOSTNAME": "Host Name",
+    "VERSION": "APCUPSD Version",
+    "UPSNAME": "UPS Name",
+    "CABLE": "Cable",
+    "DRIVER": "Driver",
+    "UPSMODE": "UPS Mode",
+    "STARTTIME": "APCUPSD Start Time",
+    "MODEL": "Model",
+    "STATUS": "UPS Status",
+    "LINEV": "Input Voltage",
+    "LOADPCT": "Load",
+    "LOADAPNT": "Load Apparent",
+    "BCHARGE": "Battery Charge",
+    "TIMELEFT": "Runtime Remaining",
+    "MBATTCHG": "Minimum Battery Charge",
+    "MINTIMEL": "Minimum Runtime",
+    "MAXTIME": "Maximum Runtime",
+    "OUTPUTV": "Output Voltage",
+    "DWAKE": "Wake Delay",
+    "DSHUTD": "Shutdown Delay",
+    "ITEMP": "Internal Temperature",
+    "BATTV": "Battery Voltage",
+    "LINEFREQ": "Line Frequency",
+    "OUTCURNT": "Output Current",
+    "LASTXFER": "Last Transfer Reason",
+    "NUMXFERS": "Transfer Count",
+    "XONBATT": "Last On Battery Time",
+    "TONBATT": "Time on Battery",
+    "CUMONBATT": "Cumulative Time on Battery",
+    "XOFFBATT": "Last Off Battery Time",
+    "SELFTEST": "Self Test",
+    "STATFLAG": "Status Flag",
+    "MANDATE": "Manufacture Date",
+    "SERIALNO": "Serial Number",
+    "BATTDATE": "Battery Date",
+    "NOMOUTV": "Nominal Output Voltage",
+    "NOMPOWER": "Nominal Power",
+    "NOMAPNT": "Nominal Apparent Power",
+    "FIRMWARE": "Firmware",
+    "END APC": "APC Sample End",
+}
+
+VALUE_UNITS = {
+    "battery_charge_percent": "%",
+    "runtime_minutes": " min",
+    "seconds_on_battery": " sec",
+    "battery_voltage": " V",
+    "input_voltage": " V",
+    "output_voltage": " V",
+    "output_current": " A",
+    "line_frequency": " Hz",
+    "load_percent": "%",
+    "load_va_percent": "%",
+    "internal_temperature_c": " C",
+    "nominal_output_voltage": " V",
+    "nominal_power_watts": " W",
+    "nominal_va": " VA",
+    "min_battery_charge_percent": "%",
+    "min_runtime_minutes": " min",
+}
+
+
+def display_label(key: str) -> str:
+    return DISPLAY_LABELS.get(key, key.replace("_", " ").title())
+
+
+def raw_display_label(key: str) -> str:
+    return RAW_LABELS.get(key, key.replace("_", " ").title())
+
+
+def display_value(key: str, value: Any) -> str:
+    if isinstance(value, bool):
+        return "Yes" if value else "No"
+    if value in {"", None}:
+        return "-"
+    if key == "last_update":
+        return str(value).replace("T", " ").replace("+00:00", " UTC")
+    unit = VALUE_UNITS.get(key)
+    if unit:
+        return f"{value}{unit}"
+    return str(value)
 
 
 def render_config_form(config: AppConfig) -> str:
@@ -353,11 +716,15 @@ def render_config_form(config: AppConfig) -> str:
 
   <fieldset>
     <legend>Logging</legend>
-    <label>Level
-      <select name="logging_level">
-        {''.join(f'<option value="{level}"{_selected(config.logging.level.upper(), level)}>{level}</option>' for level in ["DEBUG", "INFO", "WARNING", "ERROR"])}
-      </select>
-    </label>
+    <div class="grid">
+      <label>Level
+        <select name="logging_level">
+          {''.join(f'<option value="{level}"{_selected(config.logging.level.upper(), level)}>{level}</option>' for level in ["DEBUG", "INFO", "WARNING", "ERROR"])}
+        </select>
+      </label>
+      <label>Log file path <input name="logging_file_path" value="{_escape(config.logging.file_path)}"></label>
+      <label>Web log tail lines <input name="logging_web_tail_lines" type="number" min="1" value="{config.logging.web_tail_lines}"></label>
+    </div>
   </fieldset>
 
   <button type="submit">Save Configuration</button>

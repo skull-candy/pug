@@ -52,6 +52,8 @@ class MqttConfig:
 @dataclass(frozen=True)
 class LoggingConfig:
     level: str = "INFO"
+    file_path: str = "/var/log/pug/pug.log"
+    web_tail_lines: int = 300
 
 
 @dataclass(frozen=True)
@@ -113,7 +115,11 @@ def config_from_mapping(data: dict[str, Any]) -> AppConfig:
             password=str(mqtt.get("password", "")),
             publish_interval_seconds=float(mqtt.get("publish_interval_seconds", 30)),
         ),
-        logging=LoggingConfig(level=str(logging.get("level", "INFO"))),
+        logging=LoggingConfig(
+            level=str(logging.get("level", "INFO")),
+            file_path=str(logging.get("file_path", "/var/log/pug/pug.log")),
+            web_tail_lines=int(logging.get("web_tail_lines", 300)),
+        ),
     )
 
 
@@ -150,6 +156,8 @@ def validate_config(config: AppConfig) -> None:
         raise ConfigError("mqtt.port must be between 1 and 65535")
     if config.mqtt.publish_interval_seconds <= 0:
         raise ConfigError("mqtt.publish_interval_seconds must be greater than zero")
+    if config.logging.web_tail_lines <= 0:
+        raise ConfigError("logging.web_tail_lines must be greater than zero")
 
 
 def _parse_simple_yaml(text: str) -> dict[str, Any]:
