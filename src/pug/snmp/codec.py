@@ -110,6 +110,10 @@ def _encode_request(pdu_tag: int, oid: str, request_id: int, community: str, ver
 def _encode_value(type_name: str, value: Any) -> bytes:
     if type_name == "integer":
         return ber.encode_integer(int(value))
+    if type_name == "gauge":
+        return ber.encode_unsigned(ber.GAUGE32, int(value))
+    if type_name == "timeticks":
+        return ber.encode_unsigned(ber.TIME_TICKS, int(value))
     if type_name == "string":
         return ber.encode_octet_string(str(value))
     if type_name == "oid":

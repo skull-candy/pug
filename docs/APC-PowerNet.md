@@ -8,12 +8,14 @@ PUG exposes a safe read-only subset of APC PowerNet OIDs. It does not implement 
 | `1.3.6.1.2.1.1.2.0` | `sysObjectID` | APC Smart-UPS identity |
 | `1.3.6.1.2.1.1.5.0` | `sysName` | `UPSState.name` |
 | `1.3.6.1.4.1.318.1.1.1.1.1.1.0` | APC model | `MODEL` |
-| `1.3.6.1.4.1.318.1.1.1.2.2.1.0` | battery status | `STATUS` |
-| `1.3.6.1.4.1.318.1.1.1.2.2.2.0` | seconds on battery | state |
-| `1.3.6.1.4.1.318.1.1.1.2.2.3.0` | runtime minutes | `TIMELEFT` |
-| `1.3.6.1.4.1.318.1.1.1.2.2.8.0` | battery charge percent | `BCHARGE` |
-| `1.3.6.1.4.1.318.1.1.1.2.2.9.0` | battery voltage | `BATTV` |
-| `1.3.6.1.4.1.318.1.1.1.2.2.10.0` | internal temperature | `ITEMP` |
+| `1.3.6.1.4.1.318.1.1.1.2.1.1.0` | basic battery status | `STATUS` |
+| `1.3.6.1.4.1.318.1.1.1.2.1.2.0` | basic time on battery | `CUMONBATT` as TimeTicks |
+| `1.3.6.1.4.1.318.1.1.1.2.1.3.0` | last battery replacement date | `BATTDATE` |
+| `1.3.6.1.4.1.318.1.1.1.2.2.1.0` | battery charge percent | `BCHARGE` as Gauge32 |
+| `1.3.6.1.4.1.318.1.1.1.2.2.2.0` | internal temperature | `ITEMP` |
+| `1.3.6.1.4.1.318.1.1.1.2.2.3.0` | runtime remaining | `TIMELEFT` as TimeTicks |
+| `1.3.6.1.4.1.318.1.1.1.2.2.4.0` | replace battery indicator | `STATUS` |
+| `1.3.6.1.4.1.318.1.1.1.2.2.8.0` | battery voltage | `BATTV` |
 | `1.3.6.1.4.1.318.1.1.1.3.2.1.0` | input voltage | `LINEV` |
 | `1.3.6.1.4.1.318.1.1.1.4.2.1.0` | output voltage | `OUTPUTV` |
 | `1.3.6.1.4.1.318.1.1.1.4.2.3.0` | output load percent | `LOADPCT` |

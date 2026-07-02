@@ -14,6 +14,10 @@ def test_simulated_state_qnap_discovery_oids() -> None:
     sys_object = registry.resolve("1.3.6.1.2.1.1.2.0")
     apc_model = registry.resolve("1.3.6.1.4.1.318.1.1.1.1.1.1.0")
     charge = registry.resolve("1.3.6.1.2.1.33.1.2.4.0")
+    apc_charge = registry.resolve("1.3.6.1.4.1.318.1.1.1.2.2.1.0")
+    apc_temp = registry.resolve("1.3.6.1.4.1.318.1.1.1.2.2.2.0")
+    apc_runtime = registry.resolve("1.3.6.1.4.1.318.1.1.1.2.2.3.0")
+    apc_voltage = registry.resolve("1.3.6.1.4.1.318.1.1.1.2.2.8.0")
 
     assert sys_object is not None
     assert apc_model is not None
@@ -21,6 +25,10 @@ def test_simulated_state_qnap_discovery_oids() -> None:
     assert sys_object.handler(state) == "1.3.6.1.4.1.318.1.1.1"
     assert apc_model.handler(state) == "Smart-UPS 3000"
     assert charge.handler(state) == 100
+    assert apc_charge.handler(state) == 100
+    assert apc_temp.handler(state) == 30
+    assert apc_runtime.handler(state) == 324000
+    assert apc_voltage.handler(state) == 54
 
 
 def test_get_request_decoder() -> None:

@@ -8,6 +8,8 @@ OCTET_STRING = 0x04
 NULL = 0x05
 OBJECT_IDENTIFIER = 0x06
 SEQUENCE = 0x30
+GAUGE32 = 0x42
+TIME_TICKS = 0x43
 GET_REQUEST = 0xA0
 GET_NEXT_REQUEST = 0xA1
 GET_RESPONSE = 0xA2
@@ -68,6 +70,15 @@ def encode_integer(value: int) -> bytes:
         while len(raw) > 1 and raw[0] == 0xFF and raw[1] & 0x80:
             raw = raw[1:]
     return encode_tlv(INTEGER, raw)
+
+
+def encode_unsigned(tag: int, value: int) -> bytes:
+    if value < 0:
+        raise ValueError("unsigned BER values must be non-negative")
+    raw = value.to_bytes(max(1, (value.bit_length() + 7) // 8), "big")
+    if raw[0] & 0x80:
+        raw = b"\x00" + raw
+    return encode_tlv(tag, raw)
 
 
 def decode_integer(value: bytes) -> int:

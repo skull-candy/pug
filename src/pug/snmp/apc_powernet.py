@@ -34,34 +34,59 @@ def apc_model(state: UPSState) -> str:
     return state.model
 
 
-@oid("1.3.6.1.4.1.318.1.1.1.2.2.1.0", type="integer", name="upsAdvBatteryStatus")
-def apc_battery_status(state: UPSState) -> int:
+@oid("1.3.6.1.4.1.318.1.1.1.2.1.1.0", type="integer", name="upsBasicBatteryStatus")
+def apc_basic_battery_status(state: UPSState) -> int:
     return apc_battery_status_value(state)
 
 
-@oid("1.3.6.1.4.1.318.1.1.1.2.2.2.0", type="integer", name="upsAdvBatteryTimeOnBattery")
-def apc_seconds_on_battery(state: UPSState) -> int:
-    return state.seconds_on_battery
+@oid("1.3.6.1.4.1.318.1.1.1.2.1.2.0", type="timeticks", name="upsBasicBatteryTimeOnBattery")
+def apc_basic_time_on_battery(state: UPSState) -> int:
+    return seconds_to_timeticks(state.seconds_on_battery)
 
 
-@oid("1.3.6.1.4.1.318.1.1.1.2.2.3.0", type="integer", name="upsAdvBatteryRunTimeRemaining")
-def apc_runtime_minutes(state: UPSState) -> int:
-    return state.runtime_minutes
+@oid("1.3.6.1.4.1.318.1.1.1.2.1.3.0", type="string", name="upsBasicBatteryLastReplaceDate")
+def apc_battery_last_replace_date(state: UPSState) -> str:
+    return state.battery_date
 
 
-@oid("1.3.6.1.4.1.318.1.1.1.2.2.8.0", type="integer", name="upsAdvBatteryCapacity")
+@oid("1.3.6.1.4.1.318.1.1.1.2.2.1.0", type="gauge", name="upsAdvBatteryCapacity")
 def apc_battery_charge(state: UPSState) -> int:
     return state.battery_charge_percent
 
 
-@oid("1.3.6.1.4.1.318.1.1.1.2.2.9.0", type="integer", name="upsAdvBatteryVoltage")
+@oid("1.3.6.1.4.1.318.1.1.1.2.2.2.0", type="integer", name="upsAdvBatteryTemperature")
+def apc_temperature(state: UPSState) -> int:
+    return round(state.internal_temperature_c)
+
+
+@oid("1.3.6.1.4.1.318.1.1.1.2.2.3.0", type="timeticks", name="upsAdvBatteryRunTimeRemaining")
+def apc_runtime_timeticks(state: UPSState) -> int:
+    return minutes_to_timeticks(state.runtime_minutes)
+
+
+@oid("1.3.6.1.4.1.318.1.1.1.2.2.4.0", type="integer", name="upsAdvBatteryReplaceIndicator")
+def apc_replace_indicator(state: UPSState) -> int:
+    return 2 if state.replace_battery else 1
+
+
+@oid("1.3.6.1.4.1.318.1.1.1.2.2.7.0", type="integer", name="upsAdvBatteryNominalVoltage")
+def apc_nominal_battery_voltage(state: UPSState) -> int:
+    return round(state.battery_voltage) if state.battery_voltage else 0
+
+
+@oid("1.3.6.1.4.1.318.1.1.1.2.2.8.0", type="integer", name="upsAdvBatteryActualVoltage")
 def apc_battery_voltage(state: UPSState) -> int:
     return round(state.battery_voltage)
 
 
-@oid("1.3.6.1.4.1.318.1.1.1.2.2.10.0", type="integer", name="upsAdvBatteryTemperature")
-def apc_temperature(state: UPSState) -> int:
-    return round(state.internal_temperature_c)
+@oid("1.3.6.1.4.1.318.1.1.1.2.2.99.1.0", type="integer", name="pugBatteryStatus")
+def pug_battery_status(state: UPSState) -> int:
+    return apc_battery_status_value(state)
+
+
+@oid("1.3.6.1.4.1.318.1.1.1.2.2.99.2.0", type="integer", name="pugSecondsOnBattery")
+def pug_seconds_on_battery(state: UPSState) -> int:
+    return state.seconds_on_battery
 
 
 @oid("1.3.6.1.4.1.318.1.1.1.3.2.1.0", type="integer", name="upsAdvInputLineVoltage")
@@ -130,6 +155,14 @@ def apc_output_source_value(state: UPSState) -> int:
     if state.online:
         return APC_OUTPUT_ON_LINE
     return APC_OUTPUT_UNKNOWN
+
+
+def seconds_to_timeticks(seconds: int) -> int:
+    return max(0, int(round(seconds * 100)))
+
+
+def minutes_to_timeticks(minutes: int) -> int:
+    return seconds_to_timeticks(minutes * 60)
 
 
 def _register_raw_status_oids() -> None:
