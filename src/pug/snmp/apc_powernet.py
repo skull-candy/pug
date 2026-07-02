@@ -1,0 +1,110 @@
+from __future__ import annotations
+
+from pug.snmp.registry import oid
+from pug.state import UPSState
+
+APC_SMART_UPS_OID = "1.3.6.1.4.1.318.1.1.1"
+
+
+@oid("1.3.6.1.2.1.1.1.0", type="string", name="sysDescr")
+def sys_descr(state: UPSState) -> str:
+    return f"APC {state.model} via PowerPi UPS Gateway"
+
+
+@oid("1.3.6.1.2.1.1.2.0", type="oid", name="sysObjectID")
+def sys_object_id(_state: UPSState) -> str:
+    return APC_SMART_UPS_OID
+
+
+@oid("1.3.6.1.2.1.1.5.0", type="string", name="sysName")
+def sys_name(state: UPSState) -> str:
+    return state.name
+
+
+@oid("1.3.6.1.4.1.318.1.1.1.1.1.1.0", type="string", name="upsBasicIdentModel")
+def apc_model(state: UPSState) -> str:
+    return state.model
+
+
+@oid("1.3.6.1.4.1.318.1.1.1.2.2.1.0", type="integer", name="upsAdvBatteryStatus")
+def apc_battery_status(state: UPSState) -> int:
+    if state.replace_battery:
+        return 4
+    if state.on_battery:
+        return 3
+    return 2 if state.online else 1
+
+
+@oid("1.3.6.1.4.1.318.1.1.1.2.2.2.0", type="integer", name="upsAdvBatteryTimeOnBattery")
+def apc_seconds_on_battery(state: UPSState) -> int:
+    return state.seconds_on_battery
+
+
+@oid("1.3.6.1.4.1.318.1.1.1.2.2.3.0", type="integer", name="upsAdvBatteryRunTimeRemaining")
+def apc_runtime_minutes(state: UPSState) -> int:
+    return state.runtime_minutes
+
+
+@oid("1.3.6.1.4.1.318.1.1.1.2.2.8.0", type="integer", name="upsAdvBatteryCapacity")
+def apc_battery_charge(state: UPSState) -> int:
+    return state.battery_charge_percent
+
+
+@oid("1.3.6.1.4.1.318.1.1.1.2.2.9.0", type="integer", name="upsAdvBatteryVoltage")
+def apc_battery_voltage(state: UPSState) -> int:
+    return round(state.battery_voltage)
+
+
+@oid("1.3.6.1.4.1.318.1.1.1.2.2.10.0", type="integer", name="upsAdvBatteryTemperature")
+def apc_temperature(state: UPSState) -> int:
+    return round(state.internal_temperature_c)
+
+
+@oid("1.3.6.1.4.1.318.1.1.1.3.2.1.0", type="integer", name="upsAdvInputLineVoltage")
+def apc_input_voltage(state: UPSState) -> int:
+    return round(state.input_voltage)
+
+
+@oid("1.3.6.1.4.1.318.1.1.1.4.2.1.0", type="integer", name="upsAdvOutputVoltage")
+def apc_output_voltage(state: UPSState) -> int:
+    return round(state.output_voltage)
+
+
+@oid("1.3.6.1.4.1.318.1.1.1.4.2.3.0", type="integer", name="upsAdvOutputLoad")
+def apc_output_load(state: UPSState) -> int:
+    return state.load_percent
+
+
+@oid("1.3.6.1.4.1.318.1.1.1.4.2.4.0", type="integer", name="upsAdvOutputCurrent")
+def apc_output_current(state: UPSState) -> int:
+    return round(state.output_current)
+
+
+@oid("1.3.6.1.4.1.318.1.1.1.4.2.5.0", type="integer", name="upsAdvOutputSource")
+def apc_output_source(state: UPSState) -> int:
+    return 3 if state.on_battery else 2 if state.online else 1
+
+
+@oid("1.3.6.1.4.1.318.1.1.1.5.2.1.0", type="integer", name="upsAdvConfigRatedOutputVoltage")
+def apc_nominal_output_voltage(state: UPSState) -> int:
+    return state.nominal_output_voltage
+
+
+@oid("1.3.6.1.4.1.318.1.1.1.5.2.2.0", type="integer", name="upsAdvConfigHighTransferVolt")
+def apc_nominal_power_watts(state: UPSState) -> int:
+    return state.nominal_power_watts
+
+
+@oid("1.3.6.1.4.1.318.1.1.1.5.2.3.0", type="integer", name="upsAdvConfigLowTransferVolt")
+def apc_nominal_va(state: UPSState) -> int:
+    return state.nominal_va
+
+
+@oid("1.3.6.1.4.1.318.1.1.1.5.2.8.0", type="integer", name="upsAdvConfigLowBatteryWarning")
+def apc_min_charge(state: UPSState) -> int:
+    return state.min_battery_charge_percent
+
+
+@oid("1.3.6.1.4.1.318.1.1.1.5.2.14.0", type="integer", name="upsAdvConfigReturnRuntime")
+def apc_min_runtime(state: UPSState) -> int:
+    return state.min_runtime_minutes

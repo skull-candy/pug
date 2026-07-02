@@ -1,0 +1,18 @@
+[Unit]
+Description=PowerPi UPS Gateway
+After=network-online.target apcupsd.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/powerpi-ups-gateway
+ExecStart=/opt/powerpi-ups-gateway/.venv/bin/python -m pug.main --config /opt/powerpi-ups-gateway/config/config.yaml
+Restart=on-failure
+RestartSec=5
+
+# UDP/161 is privileged. Running as root is simplest on appliances.
+# Alternative: grant CAP_NET_BIND_SERVICE to the Python executable or a wrapper.
+
+[Install]
+WantedBy=multi-user.target
