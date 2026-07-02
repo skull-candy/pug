@@ -9,6 +9,7 @@ from typing import Any
 
 from pug.config import MqttConfig
 from pug.frontends.homeassistant import discovery_payloads
+from pug.raw_stats import raw_stats, state_payload
 from pug.state import StateStore, UPSState
 
 LOGGER = logging.getLogger(__name__)
@@ -31,20 +32,28 @@ class MqttPublisher:
 
 
 def publish_state(config: MqttConfig, state: UPSState) -> None:
-    payload = json.dumps(state.to_dict(), sort_keys=True)
-    messages: list[tuple[str, str, bool]] = [(config.topic_prefix, payload, False)]
-    for topic, discovery_payload in discovery_payloads(
-        state,
-        config.topic_prefix,
-        config.discovery_prefix,
-    ).items():
-        messages.append((topic, json.dumps(discovery_payload, sort_keys=True), True))
+    messages = mqtt_messages(config, state)
 
     with socket.create_connection((config.host, config.port), timeout=10) as sock:
         _send_connect(sock, config)
         for topic, body, retain in messages:
             _send_publish(sock, topic, body, retain=retain)
         sock.sendall(b"\xe0\x00")
+
+
+def mqtt_messages(config: MqttConfig, state: UPSState) -> list[tuple[str, str, bool]]:
+    payload = json.dumps(state_payload(state), sort_keys=True)
+    messages: list[tuple[str, str, bool]] = [(config.topic_prefix, payload, False)]
+    messages.append((f"{config.topic_prefix}/raw", json.dumps(state.raw, sort_keys=True), False))
+    for stat in raw_stats(state):
+        messages.append((f"{config.topic_prefix}/raw/{stat.slug}", stat.value, False))
+    for topic, discovery_payload in discovery_payloads(
+        state,
+        config.topic_prefix,
+        config.discovery_prefix,
+    ).items():
+        messages.append((topic, json.dumps(discovery_payload, sort_keys=True), True))
+    return messages
 
 
 def _send_connect(sock: socket.socket, config: MqttConfig) -> None:

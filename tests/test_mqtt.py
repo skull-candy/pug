@@ -1,4 +1,6 @@
-from pug.frontends.mqtt import _remaining_length
+from pug.config import MqttConfig
+from pug.frontends.mqtt import _remaining_length, mqtt_messages
+from pug.state import UPSState
 
 
 def test_mqtt_remaining_length_encoding() -> None:
@@ -6,3 +8,11 @@ def test_mqtt_remaining_length_encoding() -> None:
     assert _remaining_length(127) == b"\x7f"
     assert _remaining_length(128) == b"\x80\x01"
     assert _remaining_length(321) == b"\xc1\x02"
+
+
+def test_mqtt_messages_include_raw_topics() -> None:
+    messages = mqtt_messages(MqttConfig(), UPSState(raw={"SELFTEST": "NG"}))
+    topics = {topic: payload for topic, payload, _retain in messages}
+
+    assert "powerpi/ups/raw" in topics
+    assert topics["powerpi/ups/raw/selftest"] == "NG"

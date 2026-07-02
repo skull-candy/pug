@@ -7,6 +7,7 @@ All frontends read from the shared `UPSState`.
 When enabled, the HTTP frontend serves:
 
 - `/api/state`: normalized UPS state as JSON.
+- `/api/raw`: raw backend key/value output.
 - `/metrics`: Prometheus text exposition.
 - `/homeassistant`: Home Assistant MQTT discovery config payloads as JSON.
 - `/ui` and `/`: small status page.
@@ -24,10 +25,18 @@ Saving the form writes `config.yaml`. Restart the service to apply backend, list
 
 ## MQTT
 
-The MQTT publisher sends the normalized UPS state as JSON to `mqtt.topic_prefix`. It also publishes retained Home Assistant discovery config messages under `mqtt.discovery_prefix`.
+The MQTT publisher sends the normalized UPS state as JSON to `mqtt.topic_prefix`. That payload includes both `raw` and `raw_stats`.
+
+It also publishes:
+
+- `<topic_prefix>/raw`: all raw backend values as JSON.
+- `<topic_prefix>/raw/<key>`: one topic per raw backend key.
+- Retained Home Assistant discovery config messages under `mqtt.discovery_prefix`.
 
 MQTT support is implemented with a tiny MQTT 3.1.1 publisher and no runtime dependency.
 
 ## SNMP
 
 The SNMP frontend exposes QNAP-compatible APC PowerNet OIDs and a small RFC1628 subset. It supports GET and basic GETNEXT.
+
+Known `apcaccess` raw keys are also exposed as read-only text values under `1.3.6.1.4.1.318.1.1.1.99.1`. Each key gets two OIDs: `<row>.1.0` for the key name and `<row>.2.0` for the value.

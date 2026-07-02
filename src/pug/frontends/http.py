@@ -24,6 +24,7 @@ from pug.config import (
 )
 from pug.frontends.homeassistant import discovery_payloads
 from pug.frontends.prometheus import render_metrics
+from pug.raw_stats import state_payload
 from pug.state import StateStore
 
 LOGGER = logging.getLogger(__name__)
@@ -71,7 +72,12 @@ class HttpFrontend:
                     )
                 elif self.path == "/api/state":
                     if config.http.api_enabled:
-                        self._send_json(state.to_dict())
+                        self._send_json(state_payload(state))
+                    else:
+                        self._send_json({"error": "api disabled"}, status=404)
+                elif self.path == "/api/raw":
+                    if config.http.api_enabled:
+                        self._send_json(state.raw)
                     else:
                         self._send_json({"error": "api disabled"}, status=404)
                 elif self.path == "/api/config":
@@ -234,6 +240,10 @@ def render_control_page(state: dict[str, Any], config: AppConfig) -> str:
         for key, value in state.items()
         if key != "raw"
     )
+    raw_rows = "\n".join(
+        f"<tr><th>{_escape(str(key))}</th><td>{_escape(str(value))}</td></tr>"
+        for key, value in sorted(state.get("raw", {}).items())
+    )
     form = render_config_form(config)
     return f"""<!doctype html>
 <html lang="en">
@@ -267,6 +277,10 @@ def render_control_page(state: dict[str, Any], config: AppConfig) -> str:
     <section>
       <h2>Status</h2>
       <table>{rows}</table>
+    </section>
+    <section>
+      <h2>Raw Backend Stats</h2>
+      <table>{raw_rows}</table>
     </section>
     <section>
       <h2>Configuration</h2>

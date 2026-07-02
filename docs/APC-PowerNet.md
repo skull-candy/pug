@@ -42,4 +42,17 @@ PUG exposes a safe read-only subset of APC PowerNet OIDs. It does not implement 
 
 These values are covered by tests for the QNAP-facing states observed so far. Additional firmware captures should still be checked when available.
 
+## PUG Raw Status Extension
+
+PUG exposes known `apcaccess` raw keys as read-only text under:
+
+`1.3.6.1.4.1.318.1.1.1.99.1`
+
+Each raw row has:
+
+- `<row>.1.0`: key name.
+- `<row>.2.0`: value.
+
+This subtree is for observability only. It does not implement control or shutdown behavior.
+
 Control and shutdown OIDs should remain unregistered unless a future design includes explicit safety controls.

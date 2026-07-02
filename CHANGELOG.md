@@ -22,3 +22,4 @@ This project follows the spirit of Keep a Changelog. Update this file for every 
 - Web UI configuration form for backend, SNMP, REST API, Prometheus, Home Assistant, MQTT, and logging settings.
 - Config save/reload support and safer parsing for quoted values containing `#`.
 - Raspberry Pi install docs and systemd service path updated for a repo checkout at `/opt/pug`.
+- Full raw backend stat publishing across REST, MQTT, Home Assistant discovery, Prometheus, Web UI, and a read-only SNMP raw-status subtree.

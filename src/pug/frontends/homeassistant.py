@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from pug.raw_stats import raw_stats
 from pug.state import UPSState
 
 
@@ -18,7 +19,7 @@ def discovery_payloads(state: UPSState, state_topic: str, discovery_prefix: str 
         "load": ("Load", "%", "power", "{{ value_json.load_percent }}"),
         "input_voltage": ("Input Voltage", "V", "voltage", "{{ value_json.input_voltage }}"),
         "output_voltage": ("Output Voltage", "V", "voltage", "{{ value_json.output_voltage }}"),
-        "temperature": ("Temperature", "°C", "temperature", "{{ value_json.internal_temperature_c }}"),
+        "temperature": ("Temperature", "C", "temperature", "{{ value_json.internal_temperature_c }}"),
     }
     payloads: dict[str, Any] = {}
     for object_id, (name, unit, device_class, template) in sensors.items():
@@ -32,4 +33,15 @@ def discovery_payloads(state: UPSState, state_topic: str, discovery_prefix: str 
             "value_template": template,
             "device": device,
         }
+    for stat in raw_stats(state):
+        topic = f"{discovery_prefix}/sensor/powerpi_ups_raw/{stat.slug}/config"
+        payload: dict[str, Any] = {
+            "name": f"UPS Raw {stat.key}",
+            "unique_id": f"powerpi_ups_raw_{stat.slug}",
+            "state_topic": f"{state_topic}/raw/{stat.slug}",
+            "device": device,
+        }
+        if stat.number is not None:
+            payload["value_template"] = "{{ value }}"
+        payloads[topic] = payload
     return payloads

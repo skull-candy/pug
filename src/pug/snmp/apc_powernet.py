@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from pug.snmp.registry import oid
+from pug.snmp.registry import oid, registry
 from pug.state import UPSState
 
 APC_SMART_UPS_OID = "1.3.6.1.4.1.318.1.1.1"
+PUG_RAW_STATUS_BASE = "1.3.6.1.4.1.318.1.1.1.99.1"
 APC_BATTERY_UNKNOWN = 1
 APC_BATTERY_NORMAL = 2
 APC_BATTERY_LOW = 3
@@ -129,3 +130,80 @@ def apc_output_source_value(state: UPSState) -> int:
     if state.online:
         return APC_OUTPUT_ON_LINE
     return APC_OUTPUT_UNKNOWN
+
+
+def _register_raw_status_oids() -> None:
+    keys = [
+        "APC",
+        "DATE",
+        "HOSTNAME",
+        "VERSION",
+        "UPSNAME",
+        "CABLE",
+        "DRIVER",
+        "UPSMODE",
+        "STARTTIME",
+        "MODEL",
+        "STATUS",
+        "LINEV",
+        "LOADPCT",
+        "LOADAPNT",
+        "BCHARGE",
+        "TIMELEFT",
+        "MBATTCHG",
+        "MINTIMEL",
+        "MAXTIME",
+        "OUTPUTV",
+        "DWAKE",
+        "DSHUTD",
+        "ITEMP",
+        "BATTV",
+        "LINEFREQ",
+        "OUTCURNT",
+        "LASTXFER",
+        "NUMXFERS",
+        "XONBATT",
+        "TONBATT",
+        "CUMONBATT",
+        "XOFFBATT",
+        "SELFTEST",
+        "STATFLAG",
+        "MANDATE",
+        "SERIALNO",
+        "BATTDATE",
+        "NOMOUTV",
+        "NOMPOWER",
+        "NOMAPNT",
+        "FIRMWARE",
+        "END APC",
+    ]
+    for index, key in enumerate(keys, start=1):
+        registry.register(
+            f"{PUG_RAW_STATUS_BASE}.{index}.1.0",
+            "string",
+            f"pugRaw{key.replace(' ', '')}Key",
+            _raw_key_handler(key),
+        )
+        registry.register(
+            f"{PUG_RAW_STATUS_BASE}.{index}.2.0",
+            "string",
+            f"pugRaw{key.replace(' ', '')}Value",
+            _raw_value_handler(key),
+        )
+
+
+def _raw_key_handler(key: str):
+    def handler(_state: UPSState) -> str:
+        return key
+
+    return handler
+
+
+def _raw_value_handler(key: str):
+    def handler(state: UPSState) -> str:
+        return str(state.raw.get(key, ""))
+
+    return handler
+
+
+_register_raw_status_oids()

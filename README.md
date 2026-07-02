@@ -70,11 +70,21 @@ For unprivileged local testing, set the SNMP port in `config/config.yaml` to a h
 HTTP defaults to port `8080`:
 
 - `http://<host>:8080/api/state`
+- `http://<host>:8080/api/raw`
 - `http://<host>:8080/metrics`
 - `http://<host>:8080/homeassistant`
 - `http://<host>:8080/ui`
 
 The Web UI is the always-on control plane. Use it to edit backend, SNMP, API, Prometheus, Home Assistant, MQTT, and logging settings. Save writes `config.yaml`; restart the service to apply backend, listener, SNMP, and MQTT runtime changes.
+
+All raw backend stats from `apcaccess` or NUT are preserved in `UPSState.raw` and published through the enabled frontends:
+
+- REST: `/api/state` includes `raw` and `raw_stats`; `/api/raw` returns only raw backend values.
+- MQTT: full state goes to `powerpi/ups`, raw JSON goes to `powerpi/ups/raw`, and every raw key gets `powerpi/ups/raw/<key>`.
+- Home Assistant: discovery includes the main normalized sensors and raw-key sensors.
+- Prometheus: normalized gauges plus `powerpi_ups_raw_numeric` and `powerpi_ups_raw_info`.
+- Web UI: status table plus a raw backend stats table.
+- SNMP: known `apcaccess` raw keys are exposed as read-only strings under `1.3.6.1.4.1.318.1.1.1.99.1`.
 
 Install as a service:
 

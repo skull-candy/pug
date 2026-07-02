@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pug.raw_stats import raw_stats
 from pug.state import UPSState
 
 
@@ -24,6 +25,14 @@ def render_metrics(state: UPSState) -> str:
     for name, value in metrics.items():
         lines.append(f"# TYPE powerpi_ups_{name} gauge")
         lines.append(f"powerpi_ups_{name}{{{labels}}} {value}")
+    lines.append("# TYPE powerpi_ups_raw_numeric gauge")
+    lines.append("# TYPE powerpi_ups_raw_info gauge")
+    for stat in raw_stats(state):
+        key = _label(stat.key)
+        raw_value = _label(stat.value)
+        if stat.number is not None:
+            lines.append(f'powerpi_ups_raw_numeric{{{labels},key="{key}"}} {stat.number}')
+        lines.append(f'powerpi_ups_raw_info{{{labels},key="{key}",value="{raw_value}"}} 1')
     return "\n".join(lines) + "\n"
 
 

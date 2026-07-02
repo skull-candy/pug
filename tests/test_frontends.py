@@ -13,12 +13,27 @@ def test_prometheus_metrics_include_core_values() -> None:
     assert " 100" in metrics
 
 
+def test_prometheus_metrics_include_raw_values() -> None:
+    metrics = render_metrics(simulator_state().updated(raw={"LINEV": "221.7 Volts", "SELFTEST": "NG"}))
+
+    assert 'powerpi_ups_raw_numeric{source_backend="simulator",model="Smart-UPS 3000",key="LINEV"} 221.7' in metrics
+    assert 'powerpi_ups_raw_info{source_backend="simulator",model="Smart-UPS 3000",key="SELFTEST",value="NG"} 1' in metrics
+
+
 def test_homeassistant_discovery_payloads_include_battery_sensor() -> None:
     payloads = discovery_payloads(simulator_state(), "powerpi/ups")
 
     topic = "homeassistant/sensor/powerpi_ups/battery_charge/config"
     assert topic in payloads
     assert payloads[topic]["state_topic"] == "powerpi/ups"
+
+
+def test_homeassistant_discovery_payloads_include_raw_sensors() -> None:
+    payloads = discovery_payloads(simulator_state().updated(raw={"SELFTEST": "NG"}), "powerpi/ups")
+
+    topic = "homeassistant/sensor/powerpi_ups_raw/selftest/config"
+    assert topic in payloads
+    assert payloads[topic]["state_topic"] == "powerpi/ups/raw/selftest"
 
 
 def test_status_page_escapes_html() -> None:
