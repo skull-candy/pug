@@ -23,3 +23,4 @@ This project follows the spirit of Keep a Changelog. Update this file for every 
 - Config save/reload support and safer parsing for quoted values containing `#`.
 - Raspberry Pi install docs and systemd service path updated for a repo checkout at `/opt/pug`.
 - Full raw backend stat publishing across REST, MQTT, Home Assistant discovery, Prometheus, Web UI, and a read-only SNMP raw-status subtree.
+- First-class UPS status publishing through MQTT status topics, Home Assistant status/binary sensors, and Prometheus status info.

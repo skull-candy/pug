@@ -25,6 +25,8 @@ def render_metrics(state: UPSState) -> str:
     for name, value in metrics.items():
         lines.append(f"# TYPE powerpi_ups_{name} gauge")
         lines.append(f"powerpi_ups_{name}{{{labels}}} {value}")
+    lines.append("# TYPE powerpi_ups_status_info gauge")
+    lines.append(f'powerpi_ups_status_info{{{labels},status="{_label(state.status_text)}"}} 1')
     lines.append("# TYPE powerpi_ups_raw_numeric gauge")
     lines.append("# TYPE powerpi_ups_raw_info gauge")
     for stat in raw_stats(state):

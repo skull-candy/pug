@@ -22,6 +22,26 @@ def discovery_payloads(state: UPSState, state_topic: str, discovery_prefix: str 
         "temperature": ("Temperature", "C", "temperature", "{{ value_json.internal_temperature_c }}"),
     }
     payloads: dict[str, Any] = {}
+    payloads[f"{discovery_prefix}/sensor/powerpi_ups/status/config"] = {
+        "name": "UPS Status",
+        "unique_id": "powerpi_ups_status",
+        "state_topic": f"{state_topic}/status",
+        "device": device,
+    }
+    binary_sensors = {
+        "online": ("UPS Online", f"{state_topic}/online"),
+        "on_battery": ("UPS On Battery", f"{state_topic}/on_battery"),
+        "replace_battery": ("UPS Replace Battery", f"{state_topic}/replace_battery"),
+    }
+    for object_id, (name, topic) in binary_sensors.items():
+        payloads[f"{discovery_prefix}/binary_sensor/powerpi_ups/{object_id}/config"] = {
+            "name": name,
+            "unique_id": f"powerpi_ups_{object_id}",
+            "state_topic": topic,
+            "payload_on": "ON",
+            "payload_off": "OFF",
+            "device": device,
+        }
     for object_id, (name, unit, device_class, template) in sensors.items():
         topic = f"{discovery_prefix}/sensor/powerpi_ups/{object_id}/config"
         payloads[topic] = {

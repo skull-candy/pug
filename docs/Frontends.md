@@ -29,6 +29,8 @@ The MQTT publisher sends the normalized UPS state as JSON to `mqtt.topic_prefix`
 
 It also publishes:
 
+- `<topic_prefix>/status`: UPS status text such as `ONLINE REPLACEBATT`.
+- `<topic_prefix>/online`, `<topic_prefix>/on_battery`, `<topic_prefix>/replace_battery`: `ON` or `OFF` status flags.
 - `<topic_prefix>/raw`: all raw backend values as JSON.
 - `<topic_prefix>/raw/<key>`: one topic per raw backend key.
 - Retained Home Assistant discovery config messages under `mqtt.discovery_prefix`.

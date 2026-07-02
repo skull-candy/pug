@@ -10,6 +10,7 @@ def test_prometheus_metrics_include_core_values() -> None:
 
     assert "powerpi_ups_battery_charge_percent" in metrics
     assert "powerpi_ups_online" in metrics
+    assert 'powerpi_ups_status_info{source_backend="simulator",model="Smart-UPS 3000",status="ONLINE"} 1' in metrics
     assert " 100" in metrics
 
 
@@ -26,6 +27,8 @@ def test_homeassistant_discovery_payloads_include_battery_sensor() -> None:
     topic = "homeassistant/sensor/powerpi_ups/battery_charge/config"
     assert topic in payloads
     assert payloads[topic]["state_topic"] == "powerpi/ups"
+    assert payloads["homeassistant/sensor/powerpi_ups/status/config"]["state_topic"] == "powerpi/ups/status"
+    assert payloads["homeassistant/binary_sensor/powerpi_ups/online/config"]["state_topic"] == "powerpi/ups/online"
 
 
 def test_homeassistant_discovery_payloads_include_raw_sensors() -> None:

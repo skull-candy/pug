@@ -16,3 +16,16 @@ def test_mqtt_messages_include_raw_topics() -> None:
 
     assert "powerpi/ups/raw" in topics
     assert topics["powerpi/ups/raw/selftest"] == "NG"
+
+
+def test_mqtt_messages_include_status_topics() -> None:
+    messages = mqtt_messages(
+        MqttConfig(),
+        UPSState(status_text="ONLINE REPLACEBATT", online=True, replace_battery=True),
+    )
+    topics = {topic: payload for topic, payload, _retain in messages}
+
+    assert topics["powerpi/ups/status"] == "ONLINE REPLACEBATT"
+    assert topics["powerpi/ups/online"] == "ON"
+    assert topics["powerpi/ups/on_battery"] == "OFF"
+    assert topics["powerpi/ups/replace_battery"] == "ON"

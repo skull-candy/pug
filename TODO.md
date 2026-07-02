@@ -22,5 +22,6 @@ This file tracks known follow-up work. Update it with every codebase change, eve
 - Added Web UI configuration editing for backend, SNMP, API, Prometheus, Home Assistant, MQTT, and logging.
 - Updated Raspberry Pi install docs and systemd paths for `/opt/pug`.
 - Added full raw backend stat publishing across REST, MQTT, Home Assistant discovery, Prometheus, Web UI, and read-only SNMP.
+- Added first-class UPS status publishing across MQTT, Home Assistant, and Prometheus.
 - Added project docs, config example, systemd service, and tests.
 - Added maintenance rule for `CHANGELOG.md` and `TODO.md`.

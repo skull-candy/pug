@@ -44,6 +44,14 @@ def publish_state(config: MqttConfig, state: UPSState) -> None:
 def mqtt_messages(config: MqttConfig, state: UPSState) -> list[tuple[str, str, bool]]:
     payload = json.dumps(state_payload(state), sort_keys=True)
     messages: list[tuple[str, str, bool]] = [(config.topic_prefix, payload, False)]
+    messages.extend(
+        [
+            (f"{config.topic_prefix}/status", state.status_text, False),
+            (f"{config.topic_prefix}/online", _mqtt_bool(state.online), False),
+            (f"{config.topic_prefix}/on_battery", _mqtt_bool(state.on_battery), False),
+            (f"{config.topic_prefix}/replace_battery", _mqtt_bool(state.replace_battery), False),
+        ]
+    )
     messages.append((f"{config.topic_prefix}/raw", json.dumps(state.raw, sort_keys=True), False))
     for stat in raw_stats(state):
         messages.append((f"{config.topic_prefix}/raw/{stat.slug}", stat.value, False))
@@ -54,6 +62,10 @@ def mqtt_messages(config: MqttConfig, state: UPSState) -> list[tuple[str, str, b
     ).items():
         messages.append((topic, json.dumps(discovery_payload, sort_keys=True), True))
     return messages
+
+
+def _mqtt_bool(value: bool) -> str:
+    return "ON" if value else "OFF"
 
 
 def _send_connect(sock: socket.socket, config: MqttConfig) -> None:
