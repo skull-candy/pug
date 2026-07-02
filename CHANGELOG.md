@@ -34,3 +34,4 @@ This project follows the spirit of Keep a Changelog. Update this file for every 
 - Expanded Home Assistant MQTT discovery metadata so normalized and known raw APC sensors publish correct units, device classes, state classes, and numeric extraction templates.
 - Improved the Web UI UPS power-flow diagram with separate desktop/mobile layouts, a left-side bypass path, clearer active/standby styling, and live values on diagram components.
 - Moved Web UI raw backend stats to a dedicated Raw Stats page and tightened UPS Details card spacing.
+- Replaced fragile Web UI text glyphs with packaged transparent PNG UPS icons and changed the top summary from Self Test to Output Voltage.

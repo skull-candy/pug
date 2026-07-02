@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+from importlib.resources import files
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from threading import Event
@@ -64,7 +65,13 @@ class HttpFrontend:
             def do_GET(self) -> None:
                 state = store.get()
                 config = frontend.current_config()
-                if self.path in {"/", "/ui"}:
+                if self.path.startswith("/assets/ups-icons/"):
+                    asset = read_ups_icon(self.path.rsplit("/", 1)[-1])
+                    if asset is None:
+                        self._send_json({"error": "not found"}, status=404)
+                    else:
+                        self._send(200, "image/png", asset)
+                elif self.path in {"/", "/ui"}:
                     self._send(
                         200,
                         "text/html; charset=utf-8",
@@ -259,6 +266,17 @@ def config_to_public_dict(config: AppConfig) -> dict[str, Any]:
     }
 
 
+def read_ups_icon(filename: str) -> bytes | None:
+    allowed = {"input.png", "avr.png", "bypass.png", "inverter.png", "battery.png", "load.png"}
+    if filename not in allowed:
+        return None
+    try:
+        return files("pug").joinpath("assets", "ups-icons", filename).read_bytes()
+    except (FileNotFoundError, ModuleNotFoundError):
+        LOGGER.warning("UPS icon asset is missing: %s", filename)
+        return None
+
+
 def render_control_page(state: dict[str, Any], config: AppConfig) -> str:
     return render_dashboard_page(state, config)
 
@@ -353,7 +371,8 @@ def page_shell(title: str, active: str, content: str) -> str:
     .metric {{ min-width:0; }}
     .metric-label {{ color:#344054; font-size:13px; margin-bottom:6px; }}
     .metric-value {{ font-weight:800; font-size:17px; color:#101828; overflow-wrap:anywhere; }}
-    .metric-icon {{ color:var(--blue); font-weight:900; margin-right:6px; }}
+    .metric-icon {{ display:inline-flex; width:20px; height:20px; margin-right:7px; vertical-align:-4px; }}
+    .metric-icon img {{ display:block; width:20px; height:20px; object-fit:contain; }}
     .diagram-wrap {{ padding: 18px 0 2px; }}
     .diagram-card {{ border:1px solid #e1e7ef; border-radius:8px; background:#fff; padding:12px; overflow:hidden; }}
     svg.power {{ display:block; width:100%; height:auto; }}
@@ -374,6 +393,8 @@ def page_shell(title: str, active: str, content: str) -> str:
     .node-icon {{ fill:none; stroke:var(--blue); stroke-width:3; stroke-linecap:round; stroke-linejoin:round; }}
     .node-icon.good {{ stroke:var(--good); }}
     .node-icon.muted {{ stroke:#98a2b3; }}
+    .node-image {{ opacity:1; }}
+    .node-image.muted {{ opacity:.42; filter: grayscale(1); }}
     .node-text {{ font: 15px system-ui, sans-serif; fill:#111827; text-anchor:middle; font-weight:800; }}
     .node-small {{ font: 13px system-ui, sans-serif; fill:#344054; text-anchor:middle; }}
     .node-caption {{ font: 12px system-ui, sans-serif; fill:var(--muted); text-anchor:middle; }}
@@ -433,7 +454,7 @@ def render_overview_cards(state: dict[str, Any]) -> str:
         ("Load", "load_percent", display_value("load_percent", state.get("load_percent"))),
         ("Battery Voltage", "battery_voltage", display_value("battery_voltage", state.get("battery_voltage"))),
         ("Input Voltage", "input_voltage", display_value("input_voltage", state.get("input_voltage"))),
-        ("Self Test", "status_text", state.get("raw", {}).get("SELFTEST", "-")),
+        ("Output Voltage", "output_voltage", display_value("output_voltage", state.get("output_voltage"))),
     ]
     html = []
     for label, icon_key, value in cards:
@@ -506,33 +527,33 @@ def render_power_flow_diagram(state: dict[str, Any]) -> str:
 
           <g>
             <circle class="node{input_node}" cx="100" cy="224" r="34" />
-            <path class="node-icon{input_icon}" d="M92 214 v16 m16-16 v16 m-21-9 h26 m-16-7 v-12 m10 19 v-19" />
+            <image class="node-image{input_icon}" href="/assets/ups-icons/input.png" x="74" y="198" width="52" height="52" preserveAspectRatio="xMidYMid meet" />
             <text class="node-text" x="100" y="276">Input</text>
             <text class="node-small" x="100" y="298">{_escape(input_v)}</text>
           </g>
 
           <g>
             <rect class="node{avr_active}" x="310" y="184" width="120" height="80" rx="10" />
-            <path class="node-icon{avr_icon}" d="M350 218 q10-18 20 0 t20 0 m-40 18 q10-18 20 0 t20 0" />
+            <image class="node-image{avr_icon}" href="/assets/ups-icons/avr.png" x="340" y="199" width="60" height="50" preserveAspectRatio="xMidYMid meet" />
             <text class="node-text" x="370" y="292">AVR</text>
             <text class="node-caption" x="370" y="314">Line conditioner</text>
           </g>
 
           <g>
             <rect class="node{bypass_active}" x="492" y="132" width="56" height="56" rx="8" />
-            <path class="node-icon{' good' if mode == 'bypass' else ' muted'}" d="M507 158 q8-12 16 0 t16 0 m-31 14 h24" />
+            <image class="node-image{' ' if mode == 'bypass' else ' muted'}" href="/assets/ups-icons/bypass.png" x="504" y="144" width="32" height="32" preserveAspectRatio="xMidYMid meet" />
             <text class="node-text" x="520" y="212">Bypass</text>
           </g>
 
           <g>
             <rect class="node{inverter_active}" x="615" y="184" width="120" height="80" rx="10" />
-            <path class="node-icon{inverter_icon}" d="M665 214 h22 m-22 18 h22 m-22 19 q10-16 20 0 t20 0" />
+            <image class="node-image{inverter_icon}" href="/assets/ups-icons/inverter.png" x="645" y="199" width="60" height="50" preserveAspectRatio="xMidYMid meet" />
             <text class="node-text" x="675" y="292">Inverter</text>
           </g>
 
           <g>
             <rect class="node{battery_active}" x="420" y="336" width="60" height="48" rx="7" />
-            <path class="node-icon{battery_icon}" d="M440 350 h20 v22 h-20 z m6-6 h8 m-8 18 h8" />
+            <image class="node-image{battery_icon}" href="/assets/ups-icons/battery.png" x="432" y="342" width="36" height="36" preserveAspectRatio="xMidYMid meet" />
             <text class="node-text" x="450" y="408">Battery</text>
             <text class="node-small" x="450" y="324">{_escape(battery)}</text>
             <text class="node-caption" x="450" y="422">{_escape(battery_v)}</text>
@@ -540,7 +561,7 @@ def render_power_flow_diagram(state: dict[str, Any]) -> str:
 
           <g>
             <circle class="node{bypass_active if mode == 'bypass' else inverter_active}" cx="940" cy="224" r="34" />
-            <path class="node-icon{load_icon}" d="M931 216 v19 m18-19 v19 m-23-10 h28 m-16-9 v-13 m10 22 v-22" />
+            <image class="node-image{load_icon}" href="/assets/ups-icons/load.png" x="914" y="198" width="52" height="52" preserveAspectRatio="xMidYMid meet" />
             <text class="node-text" x="940" y="276">Load</text>
             <text class="node-small" x="940" y="298">{_escape(load)}</text>
             <text class="node-caption" x="940" y="318">{_escape(output_v)}</text>
@@ -568,41 +589,41 @@ def render_power_flow_diagram(state: dict[str, Any]) -> str:
 
           <g>
             <circle class="node{input_node}" cx="180" cy="54" r="30" />
-            <path class="node-icon{input_icon}" d="M172 45 v18 m16-18 v18 m-21-9 h26 m-16-8 v-12 m10 20 v-20" />
+            <image class="node-image{input_icon}" href="/assets/ups-icons/input.png" x="158" y="32" width="44" height="44" preserveAspectRatio="xMidYMid meet" />
             <text class="node-text" x="245" y="50">Input</text>
             <text class="node-small" x="245" y="70">{_escape(input_v)}</text>
           </g>
 
           <g>
             <rect class="node{bypass_active}" x="32" y="166" width="48" height="48" rx="8" />
-            <path class="node-icon{' good' if mode == 'bypass' else ' muted'}" d="M43 188 q7-10 14 0 t14 0 m-27 12 h22" />
+            <image class="node-image{' ' if mode == 'bypass' else ' muted'}" href="/assets/ups-icons/bypass.png" x="43" y="177" width="26" height="26" preserveAspectRatio="xMidYMid meet" />
             <text class="node-text" x="56" y="238">Bypass</text>
             <text class="node-caption" x="56" y="256">{'Active' if mode == 'bypass' else 'Standby'}</text>
           </g>
 
           <g>
             <rect class="node{avr_active}" x="142" y="154" width="76" height="72" rx="10" />
-            <path class="node-icon{avr_icon}" d="M164 184 q8-14 16 0 t16 0 m-32 18 q8-14 16 0 t16 0" />
+            <image class="node-image{avr_icon}" href="/assets/ups-icons/avr.png" x="157" y="174" width="46" height="38" preserveAspectRatio="xMidYMid meet" />
             <text class="node-text" x="252" y="188">AVR</text>
             <text class="node-caption" x="252" y="207">Line conditioner</text>
           </g>
 
           <g>
             <rect class="node{battery_active}" x="36" y="306" width="56" height="48" rx="8" />
-            <path class="node-icon{battery_icon}" d="M55 320 h18 v22 h-18 z m5-6 h8 m-7 18 h7" />
+            <image class="node-image{battery_icon}" href="/assets/ups-icons/battery.png" x="50" y="316" width="28" height="28" preserveAspectRatio="xMidYMid meet" />
             <text class="node-small" x="64" y="378">{_escape(battery)}</text>
             <text class="node-caption" x="64" y="396">{_escape(battery_v)}</text>
           </g>
 
           <g>
             <rect class="node{inverter_active}" x="142" y="306" width="76" height="72" rx="10" />
-            <path class="node-icon{inverter_icon}" d="M170 332 h18 m-18 16 h18 m-18 20 q8-13 16 0 t16 0" />
+            <image class="node-image{inverter_icon}" href="/assets/ups-icons/inverter.png" x="157" y="323" width="46" height="42" preserveAspectRatio="xMidYMid meet" />
             <text class="node-text" x="252" y="346">Inverter</text>
           </g>
 
           <g>
             <circle class="node{bypass_active if mode == 'bypass' else inverter_active}" cx="180" cy="500" r="30" />
-            <path class="node-icon{load_icon}" d="M172 492 v18 m16-18 v18 m-21-9 h26 m-16-8 v-12 m10 20 v-20" />
+            <image class="node-image{load_icon}" href="/assets/ups-icons/load.png" x="158" y="478" width="44" height="44" preserveAspectRatio="xMidYMid meet" />
             <text class="node-text" x="252" y="492">Load</text>
             <text class="node-small" x="252" y="512">{_escape(load)}</text>
             <text class="node-caption" x="252" y="532">{_escape(output_v)}</text>
@@ -688,14 +709,16 @@ def tail_log_lines(path: str, max_lines: int) -> list[str]:
 
 
 def metric_icon(key: str) -> str:
-    return {
-        "online": "[~]",
-        "runtime_minutes": "[t]",
-        "battery_charge_percent": "[b]",
-        "load_percent": "[L]",
-        "battery_voltage": "[V]",
-        "status_text": "[i]",
-    }.get(key, "[ ]")
+    icon = {
+        "online": "avr",
+        "runtime_minutes": "battery",
+        "battery_charge_percent": "battery",
+        "load_percent": "load",
+        "battery_voltage": "battery",
+        "input_voltage": "input",
+        "output_voltage": "load",
+    }.get(key, "avr")
+    return f'<img src="/assets/ups-icons/{icon}.png" alt="">'
 
 
 def _active(active: str, page: str) -> str:

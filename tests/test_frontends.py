@@ -7,6 +7,7 @@ from pug.frontends.http import (
     display_value,
     power_flow_mode,
     raw_display_label,
+    read_ups_icon,
     render_control_page,
     render_logs_page,
     render_raw_stats_page,
@@ -120,12 +121,25 @@ def test_dashboard_has_modern_sections_and_no_settings_form() -> None:
     assert 'class="power desktop"' in page
     assert 'class="power mobile"' in page
     assert "Input Voltage" in page
+    assert "Output Voltage" in page
+    assert "Self Test" not in page
+    assert "/assets/ups-icons/input.png" in page
+    assert "/assets/ups-icons/avr.png" in page
+    assert "/assets/ups-icons/inverter.png" in page
     assert "Rectifier" not in page
     assert "UPS Details" in page
     assert 'href="/raw"' in page
     assert "<h2>Raw Backend Stats</h2>" not in page
     assert 'href="/settings"' in page
     assert 'action="/config"' not in page
+
+
+def test_ups_icon_assets_are_packaged() -> None:
+    icon = read_ups_icon("input.png")
+
+    assert icon is not None
+    assert icon.startswith(b"\x89PNG\r\n\x1a\n")
+    assert read_ups_icon("../input.png") is None
 
 
 def test_raw_stats_page_contains_backend_values() -> None:
