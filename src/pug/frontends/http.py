@@ -336,15 +336,19 @@ def page_shell(title: str, active: str, content: str) -> str:
     .metric-value {{ font-weight:800; font-size:17px; color:#101828; overflow-wrap:anywhere; }}
     .metric-icon {{ color:var(--blue); font-weight:900; margin-right:6px; }}
     .diagram-wrap {{ overflow-x:auto; padding: 18px 0 2px; }}
-    svg.power {{ width:100%; min-width:760px; height:300px; }}
-    .path {{ stroke:#d8dee8; stroke-width:4; fill:none; }}
-    .path.active {{ stroke:var(--blue); stroke-dasharray:10 6; animation: dash 1.3s linear infinite; }}
-    .path.standby {{ opacity:.45; }}
-    .node {{ fill:var(--blue2); stroke:#fff; stroke-width:3; }}
+    svg.power {{ width:100%; min-width:820px; height:360px; }}
+    .path {{ stroke:#d8dee8; stroke-width:5; fill:none; stroke-linecap:round; stroke-linejoin:round; }}
+    .path.active {{ stroke:var(--blue); stroke-dasharray:12 8; animation: dash 1.2s linear infinite; }}
+    .path.standby {{ opacity:.55; }}
+    .path.solid.active {{ stroke-dasharray:none; animation:none; }}
+    .node {{ fill:#fff; stroke:#98a2b3; stroke-width:3; }}
     .node.standby {{ fill:#98a2b3; }}
-    .node.active {{ filter: drop-shadow(0 2px 5px rgba(7,94,181,.25)); }}
-    .node-text {{ font: 15px system-ui, sans-serif; fill:#111827; text-anchor:middle; }}
+    .node.active {{ stroke:var(--blue); filter: drop-shadow(0 2px 6px rgba(7,94,181,.20)); }}
+    .node-fill {{ fill:#98a2b3; }}
+    .node-fill.active {{ fill:var(--blue2); }}
+    .node-text {{ font: 15px system-ui, sans-serif; fill:#111827; text-anchor:middle; font-weight:700; }}
     .node-small {{ font: 13px system-ui, sans-serif; fill:#344054; text-anchor:middle; }}
+    .node-caption {{ font: 12px system-ui, sans-serif; fill:var(--muted); text-anchor:middle; }}
     .legend {{ display:flex; gap:14px; flex-wrap:wrap; color:var(--muted); font-size:13px; padding-top:8px; }}
     .legend span::before {{ content:""; display:inline-block; width:22px; height:4px; border-radius:4px; margin-right:6px; vertical-align:middle; background:#d8dee8; }}
     .legend .active-leg::before {{ background:var(--blue); }}
@@ -410,8 +414,8 @@ def render_power_flow_diagram(state: dict[str, Any]) -> str:
     line_active = " active" if mode == "line" else " standby"
     battery_active = " active" if mode == "battery" else " standby"
     bypass_active = " active" if mode == "bypass" else " standby"
-    inverter_active = " active" if mode in {"battery", "online_conversion"} else " standby"
-    rectifier_active = " active" if mode == "online_conversion" else " standby"
+    inverter_active = " active" if mode == "battery" else " standby"
+    avr_active = " active" if mode in {"line", "online_conversion"} else " standby"
     input_v = display_value("input_voltage", state.get("input_voltage"))
     battery = display_value("battery_charge_percent", state.get("battery_charge_percent"))
     load = display_value("load_percent", state.get("load_percent"))
@@ -425,33 +429,55 @@ def render_power_flow_diagram(state: dict[str, Any]) -> str:
     }[mode]
     return f"""
     <div class="diagram-wrap">
-      <svg class="power" viewBox="0 0 980 300" role="img" aria-label="UPS power flow diagram">
-        <path class="path{bypass_active}" d="M205 78 H775 V165" />
-        <line class="path{line_active}" x1="135" y1="165" x2="840" y2="165" />
-        <line class="path{battery_active}" x1="490" y1="245" x2="490" y2="165" />
-        <line class="path{inverter_active}" x1="490" y1="165" x2="840" y2="165" />
-        <line class="path{rectifier_active}" x1="135" y1="165" x2="490" y2="165" />
-        <text class="node-text" x="95" y="140">Input</text>
-        <text class="node-small" x="95" y="160">{_escape(input_v)}</text>
-        <path d="M82 118 L107 118 L94 96 Z" fill="none" stroke="var(--blue)" stroke-width="4" />
-        <circle class="node{rectifier_active}" cx="340" cy="165" r="38" />
-        <text x="340" y="160" fill="#fff" text-anchor="middle" font-size="24">~</text>
-        <text x="340" y="181" fill="#fff" text-anchor="middle" font-size="22">=</text>
-        <text class="node-text" x="340" y="225">Rectifier</text>
-        <circle class="node{bypass_active}" cx="490" cy="78" r="38" />
-        <text x="490" y="67" fill="#fff" text-anchor="middle" font-size="24">~</text>
-        <text x="490" y="89" fill="#fff" text-anchor="middle" font-size="24">~</text>
-        <text class="node-text" x="490" y="135">Bypass</text>
-        <circle class="node{inverter_active}" cx="640" cy="165" r="38" />
-        <text x="640" y="160" fill="#fff" text-anchor="middle" font-size="22">=</text>
-        <text x="640" y="181" fill="#fff" text-anchor="middle" font-size="24">~</text>
-        <text class="node-text" x="640" y="225">Inverter</text>
-        <rect x="468" y="248" width="44" height="24" rx="3" fill="none" stroke="var(--blue)" stroke-width="4" />
-        <text class="node-small" x="490" y="292">{_escape(battery)}</text>
-        <path d="M884 150 v38 m-10-26 h20 m-16 0 v-16 m12 16 v-16" fill="none" stroke="var(--blue)" stroke-width="4" stroke-linecap="round" />
-        <text class="node-text" x="895" y="155">Load</text>
-        <text class="node-small" x="895" y="178">{_escape(load)}</text>
-        <text class="node-small" x="895" y="198">{_escape(output_v)}</text>
+      <svg class="power" viewBox="0 0 1040 360" role="img" aria-label="UPS power flow diagram">
+        <path class="path{bypass_active}" d="M195 95 H835 V175" />
+        <path class="path{line_active}" d="M155 175 H390" />
+        <path class="path{line_active}" d="M510 175 H835" />
+        <path class="path{battery_active}" d="M455 278 V222 H650 V175" />
+        <path class="path{inverter_active}" d="M650 175 H835" />
+
+        <g>
+          <path d="M92 120 L126 120 L109 88 Z" fill="none" stroke="var(--blue)" stroke-width="4" />
+          <line x1="109" y1="120" x2="109" y2="152" stroke="var(--blue)" stroke-width="4" />
+          <text class="node-text" x="109" y="202">Input</text>
+          <text class="node-small" x="109" y="222">{_escape(input_v)}</text>
+        </g>
+
+        <g>
+          <rect class="node{avr_active}" x="390" y="125" width="120" height="100" rx="12" />
+          <rect class="node-fill{avr_active}" x="413" y="149" width="74" height="24" rx="5" />
+          <text x="450" y="167" fill="#fff" text-anchor="middle" font-size="16" font-weight="700">AVR</text>
+          <text class="node-caption" x="450" y="195">Line conditioner</text>
+          <text class="node-text" x="450" y="250">Line / AVR</text>
+        </g>
+
+        <g>
+          <circle class="node{bypass_active}" cx="520" cy="95" r="34" />
+          <text x="520" y="102" fill="#fff" text-anchor="middle" font-size="23">~</text>
+          <text class="node-text" x="520" y="145">Bypass</text>
+        </g>
+
+        <g>
+          <circle class="node{inverter_active}" cx="650" cy="175" r="38" />
+          <text x="650" y="169" fill="#fff" text-anchor="middle" font-size="21">=</text>
+          <text x="650" y="190" fill="#fff" text-anchor="middle" font-size="23">~</text>
+          <text class="node-text" x="650" y="250">Inverter</text>
+        </g>
+
+        <g>
+          <rect x="428" y="278" width="54" height="30" rx="4" fill="none" stroke="var(--blue)" stroke-width="4" />
+          <rect x="482" y="287" width="7" height="12" rx="2" fill="var(--blue)" />
+          <text class="node-text" x="455" y="335">Battery</text>
+          <text class="node-small" x="455" y="323">{_escape(battery)}</text>
+        </g>
+
+        <g>
+          <rect x="875" y="137" width="86" height="76" rx="10" fill="#f8fafc" stroke="var(--blue)" stroke-width="3" />
+          <path d="M905 156 v37 m-10-25 h20 m-16 0 v-14 m12 14 v-14" fill="none" stroke="var(--blue)" stroke-width="4" stroke-linecap="round" />
+          <text class="node-text" x="918" y="238">Load</text>
+          <text class="node-small" x="918" y="258">{_escape(load)}</text>
+          <text class="node-small" x="918" y="278">{_escape(output_v)}</text>
+        </g>
       </svg>
       <div class="legend"><span class="active-leg">{_escape(mode_label)}</span><span>Standby path</span></div>
     </div>

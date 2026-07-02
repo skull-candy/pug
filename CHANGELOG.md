@@ -28,3 +28,4 @@ This project follows the spirit of Keep a Changelog. Update this file for every 
 - Modern Web UI dashboard with navigation, overview cards, animated power-flow diagram, separate settings page, and bounded log viewer.
 - Mode-aware UPS diagram paths for line/AVR, battery, bypass, and conversion states.
 - Individual MQTT topics for normalized values, including restored Home Assistant temperature publishing via `internal_temperature_c`.
+- Redrawn Web UI power-flow diagram around line-interactive UPS topology with clearer AVR, bypass, battery, inverter, and load blocks.

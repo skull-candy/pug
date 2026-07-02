@@ -75,6 +75,8 @@ def test_dashboard_has_modern_sections_and_no_settings_form() -> None:
 
     assert "UPS power flow diagram" in page
     assert "Line / AVR path active" in page
+    assert "Line / AVR" in page
+    assert "Rectifier" not in page
     assert "UPS Details" in page
     assert "Raw Backend Stats" in page
     assert 'href="/settings"' in page
