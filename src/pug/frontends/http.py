@@ -337,12 +337,17 @@ def page_shell(title: str, active: str, content: str) -> str:
     .metric-icon {{ color:var(--blue); font-weight:900; margin-right:6px; }}
     .diagram-wrap {{ overflow-x:auto; padding: 18px 0 2px; }}
     svg.power {{ width:100%; min-width:760px; height:300px; }}
-    .bus {{ stroke:var(--blue); stroke-width:4; stroke-dasharray:10 6; animation: dash 1.3s linear infinite; }}
-    .bus.idle {{ animation:none; opacity:.4; }}
-    .bypass {{ stroke:#d8dee8; stroke-width:4; fill:none; }}
+    .path {{ stroke:#d8dee8; stroke-width:4; fill:none; }}
+    .path.active {{ stroke:var(--blue); stroke-dasharray:10 6; animation: dash 1.3s linear infinite; }}
+    .path.standby {{ opacity:.45; }}
     .node {{ fill:var(--blue2); stroke:#fff; stroke-width:3; }}
+    .node.standby {{ fill:#98a2b3; }}
+    .node.active {{ filter: drop-shadow(0 2px 5px rgba(7,94,181,.25)); }}
     .node-text {{ font: 15px system-ui, sans-serif; fill:#111827; text-anchor:middle; }}
     .node-small {{ font: 13px system-ui, sans-serif; fill:#344054; text-anchor:middle; }}
+    .legend {{ display:flex; gap:14px; flex-wrap:wrap; color:var(--muted); font-size:13px; padding-top:8px; }}
+    .legend span::before {{ content:""; display:inline-block; width:22px; height:4px; border-radius:4px; margin-right:6px; vertical-align:middle; background:#d8dee8; }}
+    .legend .active-leg::before {{ background:var(--blue); }}
     .detail-grid {{ display:grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 10px; }}
     .detail-item {{ border:1px solid #edf1f5; border-radius:8px; padding:10px 12px; background:#fbfcfe; }}
     .detail-item dt {{ color:var(--muted); font-size:13px; }}
@@ -401,39 +406,76 @@ def render_overview_cards(state: dict[str, Any]) -> str:
 
 
 def render_power_flow_diagram(state: dict[str, Any]) -> str:
-    active_class = "" if state.get("online") or state.get("on_battery") else " idle"
+    mode = power_flow_mode(state)
+    line_active = " active" if mode == "line" else " standby"
+    battery_active = " active" if mode == "battery" else " standby"
+    bypass_active = " active" if mode == "bypass" else " standby"
+    inverter_active = " active" if mode in {"battery", "online_conversion"} else " standby"
+    rectifier_active = " active" if mode == "online_conversion" else " standby"
     input_v = display_value("input_voltage", state.get("input_voltage"))
     battery = display_value("battery_charge_percent", state.get("battery_charge_percent"))
     load = display_value("load_percent", state.get("load_percent"))
     output_v = display_value("output_voltage", state.get("output_voltage"))
+    mode_label = {
+        "line": "Line / AVR path active",
+        "battery": "Battery path active",
+        "bypass": "Bypass path active",
+        "online_conversion": "Conversion path active",
+        "unknown": "Power path unknown",
+    }[mode]
     return f"""
     <div class="diagram-wrap">
       <svg class="power" viewBox="0 0 980 300" role="img" aria-label="UPS power flow diagram">
-        <path class="bypass" d="M310 70 H700 V165" />
-        <line class="bus{active_class}" x1="135" y1="165" x2="840" y2="165" />
-        <line class="bus{active_class}" x1="490" y1="165" x2="490" y2="245" />
+        <path class="path{bypass_active}" d="M205 78 H775 V165" />
+        <line class="path{line_active}" x1="135" y1="165" x2="840" y2="165" />
+        <line class="path{battery_active}" x1="490" y1="245" x2="490" y2="165" />
+        <line class="path{inverter_active}" x1="490" y1="165" x2="840" y2="165" />
+        <line class="path{rectifier_active}" x1="135" y1="165" x2="490" y2="165" />
         <text class="node-text" x="95" y="140">Input</text>
         <text class="node-small" x="95" y="160">{_escape(input_v)}</text>
-        <circle class="node" cx="340" cy="165" r="38" />
+        <path d="M82 118 L107 118 L94 96 Z" fill="none" stroke="var(--blue)" stroke-width="4" />
+        <circle class="node{rectifier_active}" cx="340" cy="165" r="38" />
         <text x="340" y="160" fill="#fff" text-anchor="middle" font-size="24">~</text>
         <text x="340" y="181" fill="#fff" text-anchor="middle" font-size="22">=</text>
         <text class="node-text" x="340" y="225">Rectifier</text>
-        <circle class="node" cx="490" cy="70" r="38" />
+        <circle class="node{bypass_active}" cx="490" cy="78" r="38" />
         <text x="490" y="67" fill="#fff" text-anchor="middle" font-size="24">~</text>
         <text x="490" y="89" fill="#fff" text-anchor="middle" font-size="24">~</text>
         <text class="node-text" x="490" y="135">Bypass</text>
-        <circle class="node" cx="640" cy="165" r="38" />
+        <circle class="node{inverter_active}" cx="640" cy="165" r="38" />
         <text x="640" y="160" fill="#fff" text-anchor="middle" font-size="22">=</text>
         <text x="640" y="181" fill="#fff" text-anchor="middle" font-size="24">~</text>
         <text class="node-text" x="640" y="225">Inverter</text>
         <rect x="468" y="248" width="44" height="24" rx="3" fill="none" stroke="var(--blue)" stroke-width="4" />
         <text class="node-small" x="490" y="292">{_escape(battery)}</text>
+        <path d="M884 150 v38 m-10-26 h20 m-16 0 v-16 m12 16 v-16" fill="none" stroke="var(--blue)" stroke-width="4" stroke-linecap="round" />
         <text class="node-text" x="895" y="155">Load</text>
         <text class="node-small" x="895" y="178">{_escape(load)}</text>
         <text class="node-small" x="895" y="198">{_escape(output_v)}</text>
       </svg>
+      <div class="legend"><span class="active-leg">{_escape(mode_label)}</span><span>Standby path</span></div>
     </div>
     """
+
+
+def power_flow_mode(state: dict[str, Any]) -> str:
+    status = f"{state.get('status_text', '')} {state.get('raw', {}).get('STATUS', '')}".upper()
+    if "BYPASS" in status:
+        return "bypass"
+    if state.get("on_battery"):
+        return "battery"
+    if state.get("online") and voltages_close(state.get("input_voltage"), state.get("output_voltage")):
+        return "line"
+    if state.get("online"):
+        return "online_conversion"
+    return "unknown"
+
+
+def voltages_close(input_voltage: Any, output_voltage: Any, tolerance: float = 5.0) -> bool:
+    try:
+        return abs(float(input_voltage) - float(output_voltage)) <= tolerance
+    except (TypeError, ValueError):
+        return False
 
 
 def render_detail_rows(state: dict[str, Any]) -> str:
@@ -491,13 +533,13 @@ def tail_log_lines(path: str, max_lines: int) -> list[str]:
 
 def metric_icon(key: str) -> str:
     return {
-        "online": "◇",
-        "runtime_minutes": "◴",
-        "battery_charge_percent": "▮",
-        "load_percent": "▣",
-        "battery_voltage": "▾",
-        "status_text": "●",
-    }.get(key, "•")
+        "online": "[~]",
+        "runtime_minutes": "[t]",
+        "battery_charge_percent": "[b]",
+        "load_percent": "[L]",
+        "battery_voltage": "[V]",
+        "status_text": "[i]",
+    }.get(key, "[ ]")
 
 
 def _active(active: str, page: str) -> str:

@@ -1,5 +1,5 @@
 from pug.config import MqttConfig
-from pug.frontends.mqtt import _remaining_length, mqtt_messages
+from pug.frontends.mqtt import _remaining_length, mqtt_messages, normalized_topics
 from pug.state import UPSState
 
 
@@ -29,3 +29,12 @@ def test_mqtt_messages_include_status_topics() -> None:
     assert topics["powerpi/ups/online"] == "ON"
     assert topics["powerpi/ups/on_battery"] == "OFF"
     assert topics["powerpi/ups/replace_battery"] == "ON"
+
+
+def test_mqtt_messages_include_normalized_temperature_topic() -> None:
+    state = UPSState(internal_temperature_c=27.0)
+    messages = mqtt_messages(MqttConfig(), state)
+    topics = {topic: payload for topic, payload, _retain in messages}
+
+    assert normalized_topics(state)["internal_temperature_c"] == "27.0"
+    assert topics["powerpi/ups/internal_temperature_c"] == "27.0"

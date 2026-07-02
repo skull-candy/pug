@@ -77,12 +77,13 @@ HTTP defaults to port `8080`:
 - `http://<host>:8080/settings` configuration
 - `http://<host>:8080/logs` bounded log tail view
 
-The Web UI is the always-on control plane. The dashboard shows an interactive UPS power-flow diagram, overview cards, UPS details, and raw backend stats. Settings live on `/settings`; use that page to edit backend, SNMP, API, Prometheus, Home Assistant, MQTT, and logging settings. Save writes `config.yaml`; restart the service to apply backend, listener, SNMP, and MQTT runtime changes. Logs live on `/logs` and only tail the configured number of lines, so huge log files do not slow the UI.
+The Web UI is the always-on control plane. The dashboard shows a mode-aware UPS power-flow diagram, overview cards, UPS details, and raw backend stats. The diagram highlights line/AVR, battery, bypass, or conversion path based on UPS status and input/output voltage. Settings live on `/settings`; use that page to edit backend, SNMP, API, Prometheus, Home Assistant, MQTT, and logging settings. Save writes `config.yaml`; restart the service to apply backend, listener, SNMP, and MQTT runtime changes. Logs live on `/logs` and only tail the configured number of lines, so huge log files do not slow the UI.
 
 All raw backend stats from `apcaccess` or NUT are preserved in `UPSState.raw` and published through the enabled frontends:
 
 - REST: `/api/state` includes `raw` and `raw_stats`; `/api/raw` returns only raw backend values.
 - MQTT: full state goes to `powerpi/ups`, UPS status goes to `powerpi/ups/status`, status flags go to `powerpi/ups/online`, `powerpi/ups/on_battery`, and `powerpi/ups/replace_battery`, raw JSON goes to `powerpi/ups/raw`, and every raw key gets `powerpi/ups/raw/<key>`.
+- MQTT normalized values are also published individually, such as `powerpi/ups/internal_temperature_c`, `powerpi/ups/input_voltage`, and `powerpi/ups/load_percent`.
 - Home Assistant: discovery includes the main normalized sensors, a UPS status sensor, online/on-battery/replace-battery binary sensors, and raw-key sensors.
 - Prometheus: normalized gauges, `powerpi_ups_status_info`, plus `powerpi_ups_raw_numeric` and `powerpi_ups_raw_info`.
 - Web UI: status table plus a raw backend stats table.

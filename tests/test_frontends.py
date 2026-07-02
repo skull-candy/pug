@@ -5,6 +5,7 @@ from pug.frontends.http import (
     config_from_form,
     display_label,
     display_value,
+    power_flow_mode,
     raw_display_label,
     render_control_page,
     render_logs_page,
@@ -35,9 +36,11 @@ def test_homeassistant_discovery_payloads_include_battery_sensor() -> None:
 
     topic = "homeassistant/sensor/powerpi_ups/battery_charge/config"
     assert topic in payloads
-    assert payloads[topic]["state_topic"] == "powerpi/ups"
+    assert payloads[topic]["state_topic"] == "powerpi/ups/battery_charge_percent"
     assert payloads["homeassistant/sensor/powerpi_ups/status/config"]["state_topic"] == "powerpi/ups/status"
     assert payloads["homeassistant/binary_sensor/powerpi_ups/online/config"]["state_topic"] == "powerpi/ups/online"
+    assert payloads["homeassistant/sensor/powerpi_ups/temperature/config"]["state_topic"] == "powerpi/ups/internal_temperature_c"
+    assert payloads["homeassistant/sensor/powerpi_ups/temperature/config"]["unit_of_measurement"] == "°C"
 
 
 def test_homeassistant_discovery_payloads_include_raw_sensors() -> None:
@@ -71,6 +74,7 @@ def test_dashboard_has_modern_sections_and_no_settings_form() -> None:
     page = render_control_page(simulator_state().to_dict(), AppConfig())
 
     assert "UPS power flow diagram" in page
+    assert "Line / AVR path active" in page
     assert "UPS Details" in page
     assert "Raw Backend Stats" in page
     assert 'href="/settings"' in page
@@ -102,6 +106,18 @@ def test_display_helpers_are_human_friendly() -> None:
     assert display_value("runtime_minutes", 39) == "39 min"
     assert display_value("online", True) == "Yes"
     assert raw_display_label("LASTXFER") == "Last Transfer Reason"
+
+
+def test_power_flow_mode_reflects_ups_state() -> None:
+    line_state = simulator_state().updated(online=True, on_battery=False, input_voltage=221.7, output_voltage=221.7).to_dict()
+    battery_state = simulator_state().updated(online=False, on_battery=True).to_dict()
+    bypass_state = simulator_state().updated(status_text="BYPASS", raw={"STATUS": "BYPASS"}).to_dict()
+    conversion_state = simulator_state().updated(online=True, input_voltage=210.0, output_voltage=230.0).to_dict()
+
+    assert power_flow_mode(line_state) == "line"
+    assert power_flow_mode(battery_state) == "battery"
+    assert power_flow_mode(bypass_state) == "bypass"
+    assert power_flow_mode(conversion_state) == "online_conversion"
 
 
 def test_config_form_can_disable_methods() -> None:

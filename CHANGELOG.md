@@ -26,3 +26,5 @@ This project follows the spirit of Keep a Changelog. Update this file for every 
 - First-class UPS status publishing through MQTT status topics, Home Assistant status/binary sensors, and Prometheus status info.
 - Human-friendly Web UI status and raw-stat labels with units and readable boolean values.
 - Modern Web UI dashboard with navigation, overview cards, animated power-flow diagram, separate settings page, and bounded log viewer.
+- Mode-aware UPS diagram paths for line/AVR, battery, bypass, and conversion states.
+- Individual MQTT topics for normalized values, including restored Home Assistant temperature publishing via `internal_temperature_c`.

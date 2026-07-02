@@ -44,6 +44,8 @@ def publish_state(config: MqttConfig, state: UPSState) -> None:
 def mqtt_messages(config: MqttConfig, state: UPSState) -> list[tuple[str, str, bool]]:
     payload = json.dumps(state_payload(state), sort_keys=True)
     messages: list[tuple[str, str, bool]] = [(config.topic_prefix, payload, False)]
+    for key, value in normalized_topics(state).items():
+        messages.append((f"{config.topic_prefix}/{key}", value, False))
     messages.extend(
         [
             (f"{config.topic_prefix}/status", state.status_text, False),
@@ -62,6 +64,28 @@ def mqtt_messages(config: MqttConfig, state: UPSState) -> list[tuple[str, str, b
     ).items():
         messages.append((topic, json.dumps(discovery_payload, sort_keys=True), True))
     return messages
+
+
+def normalized_topics(state: UPSState) -> dict[str, str]:
+    values = {
+        "battery_charge_percent": state.battery_charge_percent,
+        "runtime_minutes": state.runtime_minutes,
+        "seconds_on_battery": state.seconds_on_battery,
+        "battery_voltage": state.battery_voltage,
+        "input_voltage": state.input_voltage,
+        "output_voltage": state.output_voltage,
+        "output_current": state.output_current,
+        "line_frequency": state.line_frequency,
+        "load_percent": state.load_percent,
+        "load_va_percent": state.load_va_percent,
+        "internal_temperature_c": state.internal_temperature_c,
+        "nominal_output_voltage": state.nominal_output_voltage,
+        "nominal_power_watts": state.nominal_power_watts,
+        "nominal_va": state.nominal_va,
+        "min_battery_charge_percent": state.min_battery_charge_percent,
+        "min_runtime_minutes": state.min_runtime_minutes,
+    }
+    return {key: str(value) for key, value in values.items()}
 
 
 def _mqtt_bool(value: bool) -> str:

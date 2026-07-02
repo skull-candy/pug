@@ -25,5 +25,6 @@ This file tracks known follow-up work. Update it with every codebase change, eve
 - Added first-class UPS status publishing across MQTT, Home Assistant, and Prometheus.
 - Added human-friendly Web UI labels and formatted status values.
 - Added modern Web UI dashboard, separate settings page, and bounded log viewer.
+- Added mode-aware UPS diagram paths and restored MQTT/Home Assistant temperature publishing through individual normalized topics.
 - Added project docs, config example, systemd service, and tests.
 - Added maintenance rule for `CHANGELOG.md` and `TODO.md`.

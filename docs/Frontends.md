@@ -15,7 +15,7 @@ When enabled, the HTTP frontend serves:
 - `/logs`: bounded log tail view.
 - `/healthz`: health check.
 
-The Web UI at `/ui` is a dashboard with metric cards, an animated power-flow diagram, UPS details, and raw backend stats.
+The Web UI at `/ui` is a dashboard with metric cards, a mode-aware animated power-flow diagram, UPS details, and raw backend stats. The diagram highlights line/AVR mode when the UPS is online and input/output voltage are close, battery mode when on battery, bypass mode when status reports bypass, and conversion mode when online with a meaningful input/output voltage difference.
 
 The settings page at `/settings` includes a configuration form for:
 
@@ -38,6 +38,7 @@ It also publishes:
 
 - `<topic_prefix>/status`: UPS status text such as `ONLINE REPLACEBATT`.
 - `<topic_prefix>/online`, `<topic_prefix>/on_battery`, `<topic_prefix>/replace_battery`: `ON` or `OFF` status flags.
+- `<topic_prefix>/<normalized_key>`: one topic per normalized value, including `internal_temperature_c`.
 - `<topic_prefix>/raw`: all raw backend values as JSON.
 - `<topic_prefix>/raw/<key>`: one topic per raw backend key.
 - Retained Home Assistant discovery config messages under `mqtt.discovery_prefix`.

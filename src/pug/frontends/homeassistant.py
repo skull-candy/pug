@@ -14,12 +14,12 @@ def discovery_payloads(state: UPSState, state_topic: str, discovery_prefix: str 
         "model": state.model,
     }
     sensors = {
-        "battery_charge": ("Battery Charge", "%", "battery", "{{ value_json.battery_charge_percent }}"),
-        "runtime": ("Runtime", "min", "duration", "{{ value_json.runtime_minutes }}"),
-        "load": ("Load", "%", "power", "{{ value_json.load_percent }}"),
-        "input_voltage": ("Input Voltage", "V", "voltage", "{{ value_json.input_voltage }}"),
-        "output_voltage": ("Output Voltage", "V", "voltage", "{{ value_json.output_voltage }}"),
-        "temperature": ("Temperature", "C", "temperature", "{{ value_json.internal_temperature_c }}"),
+        "battery_charge": ("Battery Charge", "battery_charge_percent", "%", "battery"),
+        "runtime": ("Runtime", "runtime_minutes", "min", "duration"),
+        "load": ("Load", "load_percent", "%", "power"),
+        "input_voltage": ("Input Voltage", "input_voltage", "V", "voltage"),
+        "output_voltage": ("Output Voltage", "output_voltage", "V", "voltage"),
+        "temperature": ("Temperature", "internal_temperature_c", "\u00b0C", "temperature"),
     }
     payloads: dict[str, Any] = {}
     payloads[f"{discovery_prefix}/sensor/powerpi_ups/status/config"] = {
@@ -42,15 +42,14 @@ def discovery_payloads(state: UPSState, state_topic: str, discovery_prefix: str 
             "payload_off": "OFF",
             "device": device,
         }
-    for object_id, (name, unit, device_class, template) in sensors.items():
+    for object_id, (name, state_key, unit, device_class) in sensors.items():
         topic = f"{discovery_prefix}/sensor/powerpi_ups/{object_id}/config"
         payloads[topic] = {
             "name": f"UPS {name}",
             "unique_id": f"powerpi_ups_{object_id}",
-            "state_topic": state_topic,
+            "state_topic": f"{state_topic}/{state_key}",
             "unit_of_measurement": unit,
             "device_class": device_class,
-            "value_template": template,
             "device": device,
         }
     for stat in raw_stats(state):
