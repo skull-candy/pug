@@ -20,5 +20,6 @@ This file tracks known follow-up work. Update it with every codebase change, eve
 - Added CI and release-build automation.
 - Updated README and roadmap wording after completing active TODO items.
 - Added Web UI configuration editing for backend, SNMP, API, Prometheus, Home Assistant, MQTT, and logging.
+- Updated Raspberry Pi install docs and systemd paths for `/opt/pug`.
 - Added project docs, config example, systemd service, and tests.
 - Added maintenance rule for `CHANGELOG.md` and `TODO.md`.

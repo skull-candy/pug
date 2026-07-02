@@ -49,11 +49,19 @@ python -m pug.main --simulator --config config/config.yaml
 On Linux/Raspberry Pi:
 
 ```sh
+sudo apt update
+sudo apt install -y git python3 python3-venv python3-pip apcupsd
+cd /opt
+sudo git clone <your-repo-url> pug
+sudo chown -R "$USER:$USER" /opt/pug
+cd /opt/pug
 python3 -m venv .venv
 . .venv/bin/activate
 pip install -e .
 sudo python -m pug.main --simulator --config config/config.yaml
 ```
+
+The systemd service file assumes the repo lives at `/opt/pug`. If your checkout is nested somewhere else, such as `/opt/powerpi-ups-gateway/pug`, either move it to `/opt/pug` or edit `WorkingDirectory` and `ExecStart` in `systemd/powerpi-ups-gateway.service` before installing the service.
 
 UDP/161 is privileged on Linux. Run as root or grant `CAP_NET_BIND_SERVICE` to the Python interpreter or service wrapper.
 
@@ -67,6 +75,15 @@ HTTP defaults to port `8080`:
 - `http://<host>:8080/ui`
 
 The Web UI is the always-on control plane. Use it to edit backend, SNMP, API, Prometheus, Home Assistant, MQTT, and logging settings. Save writes `config.yaml`; restart the service to apply backend, listener, SNMP, and MQTT runtime changes.
+
+Install as a service:
+
+```sh
+sudo cp systemd/powerpi-ups-gateway.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now powerpi-ups-gateway
+sudo journalctl -u powerpi-ups-gateway -f
+```
 
 ## QNAP Setup
 

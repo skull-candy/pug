@@ -6,8 +6,8 @@ Wants=network-online.target
 [Service]
 Type=simple
 User=root
-WorkingDirectory=/opt/powerpi-ups-gateway
-ExecStart=/opt/powerpi-ups-gateway/.venv/bin/python -m pug.main --config /opt/powerpi-ups-gateway/config/config.yaml
+WorkingDirectory=/opt/pug
+ExecStart=/opt/pug/.venv/bin/python -m pug.main --config /opt/pug/config/config.yaml
 Restart=on-failure
 RestartSec=5
 
