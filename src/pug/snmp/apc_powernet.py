@@ -4,6 +4,13 @@ from pug.snmp.registry import oid
 from pug.state import UPSState
 
 APC_SMART_UPS_OID = "1.3.6.1.4.1.318.1.1.1"
+APC_BATTERY_UNKNOWN = 1
+APC_BATTERY_NORMAL = 2
+APC_BATTERY_LOW = 3
+APC_BATTERY_REPLACE = 4
+APC_OUTPUT_UNKNOWN = 1
+APC_OUTPUT_ON_LINE = 2
+APC_OUTPUT_ON_BATTERY = 3
 
 
 @oid("1.3.6.1.2.1.1.1.0", type="string", name="sysDescr")
@@ -28,11 +35,7 @@ def apc_model(state: UPSState) -> str:
 
 @oid("1.3.6.1.4.1.318.1.1.1.2.2.1.0", type="integer", name="upsAdvBatteryStatus")
 def apc_battery_status(state: UPSState) -> int:
-    if state.replace_battery:
-        return 4
-    if state.on_battery:
-        return 3
-    return 2 if state.online else 1
+    return apc_battery_status_value(state)
 
 
 @oid("1.3.6.1.4.1.318.1.1.1.2.2.2.0", type="integer", name="upsAdvBatteryTimeOnBattery")
@@ -82,7 +85,7 @@ def apc_output_current(state: UPSState) -> int:
 
 @oid("1.3.6.1.4.1.318.1.1.1.4.2.5.0", type="integer", name="upsAdvOutputSource")
 def apc_output_source(state: UPSState) -> int:
-    return 3 if state.on_battery else 2 if state.online else 1
+    return apc_output_source_value(state)
 
 
 @oid("1.3.6.1.4.1.318.1.1.1.5.2.1.0", type="integer", name="upsAdvConfigRatedOutputVoltage")
@@ -108,3 +111,21 @@ def apc_min_charge(state: UPSState) -> int:
 @oid("1.3.6.1.4.1.318.1.1.1.5.2.14.0", type="integer", name="upsAdvConfigReturnRuntime")
 def apc_min_runtime(state: UPSState) -> int:
     return state.min_runtime_minutes
+
+
+def apc_battery_status_value(state: UPSState) -> int:
+    if state.replace_battery:
+        return APC_BATTERY_REPLACE
+    if state.battery_charge_percent <= state.min_battery_charge_percent:
+        return APC_BATTERY_LOW
+    if state.on_battery:
+        return APC_BATTERY_LOW
+    return APC_BATTERY_NORMAL if state.online else APC_BATTERY_UNKNOWN
+
+
+def apc_output_source_value(state: UPSState) -> int:
+    if state.on_battery:
+        return APC_OUTPUT_ON_BATTERY
+    if state.online:
+        return APC_OUTPUT_ON_LINE
+    return APC_OUTPUT_UNKNOWN

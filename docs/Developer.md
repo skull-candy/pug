@@ -4,6 +4,8 @@
 
 The collector loop owns backend access and updates `StateStore`. Protocol frontends read snapshots from the store.
 
+Current frontends are SNMP, HTTP JSON, Prometheus metrics, Home Assistant Discovery, a small Web UI, and MQTT publishing.
+
 ## SNMP
 
 The SNMP core is intentionally small and dependency-free. It supports enough BER and PDU handling for v1/v2c GET requests:

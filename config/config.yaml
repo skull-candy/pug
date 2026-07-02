@@ -10,5 +10,24 @@ snmp:
   community: "public"
   developer_log: true
 
+http:
+  enabled: true
+  listen: "0.0.0.0"
+  port: 8080
+  api_enabled: true
+  prometheus_enabled: true
+  homeassistant_enabled: true
+
+mqtt:
+  enabled: false
+  host: "localhost"
+  port: 1883
+  client_id: "powerpi-ups-gateway"
+  topic_prefix: "powerpi/ups"
+  discovery_prefix: "homeassistant"
+  username: ""
+  password: ""
+  publish_interval_seconds: 30
+
 logging:
   level: INFO

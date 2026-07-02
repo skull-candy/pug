@@ -4,10 +4,7 @@ This file tracks known follow-up work. Update it with every codebase change, eve
 
 ## Active
 
-- Validate APC PowerNet enum values against more QNAP firmware versions.
-- Add NUT backend.
-- Add MQTT, REST API, Prometheus, Home Assistant Discovery, and Web UI frontends.
-- Add packaging and release automation.
+- Make saved Web UI settings apply live without a service restart where practical.
 
 ## Done
 
@@ -17,5 +14,11 @@ This file tracks known follow-up work. Update it with every codebase change, eve
 - Added basic SNMP GETNEXT walking support.
 - Fixed BER OID handling for large `2.x` object identifier roots.
 - Added configuration validation for clearer startup errors.
+- Added NUT backend support.
+- Added REST API, Prometheus, Home Assistant Discovery, Web UI, and MQTT frontends.
+- Added named APC PowerNet enum helpers and tests for QNAP-facing states.
+- Added CI and release-build automation.
+- Updated README and roadmap wording after completing active TODO items.
+- Added Web UI configuration editing for backend, SNMP, API, Prometheus, Home Assistant, MQTT, and logging.
 - Added project docs, config example, systemd service, and tests.
 - Added maintenance rule for `CHANGELOG.md` and `TODO.md`.

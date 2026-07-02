@@ -25,4 +25,21 @@ PUG exposes a safe read-only subset of APC PowerNet OIDs. It does not implement 
 | `1.3.6.1.4.1.318.1.1.1.5.2.8.0` | low battery charge threshold | config/state |
 | `1.3.6.1.4.1.318.1.1.1.5.2.14.0` | low runtime threshold | config/state |
 
+## Enum Values
+
+| Value | APC battery status |
+| --- | --- |
+| `1` | unknown |
+| `2` | normal |
+| `3` | low/on battery |
+| `4` | replace battery |
+
+| Value | APC output source |
+| --- | --- |
+| `1` | unknown |
+| `2` | on line |
+| `3` | on battery |
+
+These values are covered by tests for the QNAP-facing states observed so far. Additional firmware captures should still be checked when available.
+
 Control and shutdown OIDs should remain unregistered unless a future design includes explicit safety controls.

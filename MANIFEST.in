@@ -1,0 +1,4 @@
+include README.md LICENSE CHANGELOG.md ROADMAP.md CONTRIBUTING.md TODO.md requirements.txt
+recursive-include config *.yaml
+recursive-include docs *.md
+recursive-include systemd *.service

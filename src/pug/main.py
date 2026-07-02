@@ -7,8 +7,11 @@ import threading
 import time
 
 from pug.collector.apcupsd import ApcupsdCollector
+from pug.collector.nut import NutCollector
 from pug.collector.simulator import simulator_state
 from pug.config import ConfigError, load_config
+from pug.frontends.http import HttpFrontend
+from pug.frontends.mqtt import MqttPublisher
 from pug.logger import configure_logging
 from pug.snmp.server import SnmpServer
 from pug.state import StateStore
@@ -46,6 +49,27 @@ def main(argv: list[str] | None = None) -> int:
         daemon=True,
     )
     collector_thread.start()
+    worker_threads = [collector_thread]
+
+    if config.http.enabled:
+        http_thread = threading.Thread(
+            target=HttpFrontend(store, args.config, config, config.http.listen, config.http.port).serve_forever,
+            args=(stop,),
+            name="http",
+            daemon=True,
+        )
+        http_thread.start()
+        worker_threads.append(http_thread)
+
+    if config.mqtt.enabled:
+        mqtt_thread = threading.Thread(
+            target=MqttPublisher(store, config.mqtt).run_forever,
+            args=(stop,),
+            name="mqtt",
+            daemon=True,
+        )
+        mqtt_thread.start()
+        worker_threads.append(mqtt_thread)
 
     if config.snmp.enabled:
         server = SnmpServer(
@@ -60,12 +84,15 @@ def main(argv: list[str] | None = None) -> int:
         while not stop.is_set():
             time.sleep(1)
 
-    collector_thread.join(timeout=2)
+    for thread in worker_threads:
+        thread.join(timeout=2)
     return 0
 
 
 def _collector_loop(store: StateStore, backend_config, simulator: bool, stop: threading.Event) -> None:
-    collector = None if simulator else ApcupsdCollector(backend_config.command)
+    collector = None
+    if not simulator:
+        collector = NutCollector(backend_config.command) if backend_config.type == "nut" else ApcupsdCollector(backend_config.command)
     while not stop.is_set():
         try:
             state = simulator_state() if simulator else collector.collect()

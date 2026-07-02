@@ -11,11 +11,13 @@ Some UPS setups are easy for Linux to read but awkward for NAS appliances to con
 Current backend:
 
 - `apcupsd` via `apcaccess status localhost:3551`
+- NUT via commands such as `upsc ups@localhost`
 - Built-in simulator for local testing
 
 Current frontend:
 
 - SNMP v1/v2c GET and basic GETNEXT over UDP
+- REST JSON, Prometheus metrics, Home Assistant Discovery, Web UI, and MQTT state publishing
 
 ## Architecture
 
@@ -33,7 +35,7 @@ Current frontend:
                                                   QNAP / clients
 ```
 
-Only the collector reads the UPS backend. SNMP and future MQTT, REST, Prometheus, or Home Assistant frontends read from `UPSState`.
+Only the collector reads the UPS backend. SNMP, MQTT, REST, Prometheus, Home Assistant, and Web UI frontends read from `UPSState`.
 
 ## Quick Start
 
@@ -56,6 +58,15 @@ sudo python -m pug.main --simulator --config config/config.yaml
 UDP/161 is privileged on Linux. Run as root or grant `CAP_NET_BIND_SERVICE` to the Python interpreter or service wrapper.
 
 For unprivileged local testing, set the SNMP port in `config/config.yaml` to a high port such as `1161`.
+
+HTTP defaults to port `8080`:
+
+- `http://<host>:8080/api/state`
+- `http://<host>:8080/metrics`
+- `http://<host>:8080/homeassistant`
+- `http://<host>:8080/ui`
+
+The Web UI is the always-on control plane. Use it to edit backend, SNMP, API, Prometheus, Home Assistant, MQTT, and logging settings. Save writes `config.yaml`; restart the service to apply backend, listener, SNMP, and MQTT runtime changes.
 
 ## QNAP Setup
 

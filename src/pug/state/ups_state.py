@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
+from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timezone
 from threading import Lock
 from typing import Any
@@ -43,6 +43,11 @@ class UPSState:
         if "last_update" not in changes:
             changes["last_update"] = datetime.now(timezone.utc)
         return replace(self, **changes)
+
+    def to_dict(self) -> dict[str, Any]:
+        data = asdict(self)
+        data["last_update"] = self.last_update.isoformat()
+        return data
 
 
 class StateStore:
