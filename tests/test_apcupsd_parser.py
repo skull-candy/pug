@@ -28,6 +28,7 @@ def test_parse_apcupsd_sample() -> None:
     assert state.battery_charge_percent == 100
     assert state.runtime_minutes == 54
     assert state.output_current == 3.41
+    assert state.load_va_percent == 26
     assert state.serial == "AS1626253281"
     assert state.nominal_power_watts == 2700
     assert state.nominal_va == 3000
@@ -63,3 +64,4 @@ FIRMWARE : UPS 09.3 / 00.4
     assert state.input_voltage == 224.6
     assert state.output_voltage == 223.2
     assert state.load_percent == 27
+    assert state.load_va_percent == 29

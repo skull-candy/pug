@@ -12,6 +12,8 @@ APC_BATTERY_REPLACE = 4
 APC_OUTPUT_UNKNOWN = 1
 APC_OUTPUT_ON_LINE = 2
 APC_OUTPUT_ON_BATTERY = 3
+APC_OUTPUT_ON_SMART_BOOST = 4
+APC_OUTPUT_SOFTWARE_BYPASS = 6
 
 
 @oid("1.3.6.1.2.1.1.1.0", type="string", name="sysDescr")
@@ -94,14 +96,39 @@ def apc_input_voltage(state: UPSState) -> int:
     return round(state.input_voltage)
 
 
+@oid("1.3.6.1.4.1.318.1.1.1.3.2.4.0", type="integer", name="upsAdvInputFrequency")
+def apc_input_frequency(state: UPSState) -> int:
+    return round(state.line_frequency)
+
+
+@oid("1.3.6.1.4.1.318.1.1.1.3.3.1.0", type="gauge", name="upsHighPrecInputLineVoltage")
+def apc_high_prec_input_voltage(state: UPSState) -> int:
+    return tenths(state.input_voltage)
+
+
+@oid("1.3.6.1.4.1.318.1.1.1.3.3.4.0", type="gauge", name="upsHighPrecInputFrequency")
+def apc_high_prec_input_frequency(state: UPSState) -> int:
+    return tenths(state.line_frequency)
+
+
+@oid("1.3.6.1.4.1.318.1.1.1.4.1.1.0", type="integer", name="upsBasicOutputStatus")
+def apc_basic_output_status(state: UPSState) -> int:
+    return apc_output_source_value(state)
+
+
 @oid("1.3.6.1.4.1.318.1.1.1.4.2.1.0", type="integer", name="upsAdvOutputVoltage")
 def apc_output_voltage(state: UPSState) -> int:
     return round(state.output_voltage)
 
 
+@oid("1.3.6.1.4.1.318.1.1.1.4.2.2.0", type="integer", name="upsAdvOutputFrequency")
+def apc_output_frequency(state: UPSState) -> int:
+    return round(state.line_frequency)
+
+
 @oid("1.3.6.1.4.1.318.1.1.1.4.2.3.0", type="integer", name="upsAdvOutputLoad")
 def apc_output_load(state: UPSState) -> int:
-    return state.load_percent
+    return state.load_va_percent or state.load_percent
 
 
 @oid("1.3.6.1.4.1.318.1.1.1.4.2.4.0", type="integer", name="upsAdvOutputCurrent")
@@ -112,6 +139,26 @@ def apc_output_current(state: UPSState) -> int:
 @oid("1.3.6.1.4.1.318.1.1.1.4.2.5.0", type="integer", name="upsAdvOutputSource")
 def apc_output_source(state: UPSState) -> int:
     return apc_output_source_value(state)
+
+
+@oid("1.3.6.1.4.1.318.1.1.1.4.3.1.0", type="gauge", name="upsHighPrecOutputVoltage")
+def apc_high_prec_output_voltage(state: UPSState) -> int:
+    return tenths(state.output_voltage)
+
+
+@oid("1.3.6.1.4.1.318.1.1.1.4.3.2.0", type="gauge", name="upsHighPrecOutputFrequency")
+def apc_high_prec_output_frequency(state: UPSState) -> int:
+    return tenths(state.line_frequency)
+
+
+@oid("1.3.6.1.4.1.318.1.1.1.4.3.3.0", type="gauge", name="upsHighPrecOutputLoad")
+def apc_high_prec_output_load(state: UPSState) -> int:
+    return raw_tenths(state, "LOADAPNT") or raw_tenths(state, "LOADPCT") or tenths(state.load_va_percent or state.load_percent)
+
+
+@oid("1.3.6.1.4.1.318.1.1.1.4.3.4.0", type="gauge", name="upsHighPrecOutputCurrent")
+def apc_high_prec_output_current(state: UPSState) -> int:
+    return tenths(state.output_current)
 
 
 @oid("1.3.6.1.4.1.318.1.1.1.5.2.1.0", type="integer", name="upsAdvConfigRatedOutputVoltage")
@@ -150,6 +197,11 @@ def apc_battery_status_value(state: UPSState) -> int:
 
 
 def apc_output_source_value(state: UPSState) -> int:
+    status = state.status_text.upper()
+    if "BYPASS" in status:
+        return APC_OUTPUT_SOFTWARE_BYPASS
+    if "BOOST" in status:
+        return APC_OUTPUT_ON_SMART_BOOST
     if state.on_battery:
         return APC_OUTPUT_ON_BATTERY
     if state.online:
@@ -163,6 +215,20 @@ def seconds_to_timeticks(seconds: int) -> int:
 
 def minutes_to_timeticks(minutes: int) -> int:
     return seconds_to_timeticks(minutes * 60)
+
+
+def tenths(value: float | int) -> int:
+    return int(round(float(value) * 10))
+
+
+def raw_tenths(state: UPSState, key: str) -> int:
+    value = state.raw.get(key)
+    if not value:
+        return 0
+    try:
+        return tenths(str(value).split()[0])
+    except (ValueError, IndexError):
+        return 0
 
 
 def _register_raw_status_oids() -> None:

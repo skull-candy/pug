@@ -17,10 +17,19 @@ PUG exposes a safe read-only subset of APC PowerNet OIDs. It does not implement 
 | `1.3.6.1.4.1.318.1.1.1.2.2.4.0` | replace battery indicator | `STATUS` |
 | `1.3.6.1.4.1.318.1.1.1.2.2.8.0` | battery voltage | `BATTV` |
 | `1.3.6.1.4.1.318.1.1.1.3.2.1.0` | input voltage | `LINEV` |
+| `1.3.6.1.4.1.318.1.1.1.3.2.4.0` | input frequency | `LINEFREQ` |
+| `1.3.6.1.4.1.318.1.1.1.3.3.1.0` | high precision input voltage | `LINEV * 10` |
+| `1.3.6.1.4.1.318.1.1.1.3.3.4.0` | high precision input frequency | `LINEFREQ * 10` |
+| `1.3.6.1.4.1.318.1.1.1.4.1.1.0` | output status | `STATUS` |
 | `1.3.6.1.4.1.318.1.1.1.4.2.1.0` | output voltage | `OUTPUTV` |
-| `1.3.6.1.4.1.318.1.1.1.4.2.3.0` | output load percent | `LOADPCT` |
+| `1.3.6.1.4.1.318.1.1.1.4.2.2.0` | output frequency | `LINEFREQ` |
+| `1.3.6.1.4.1.318.1.1.1.4.2.3.0` | output load percent | `LOADAPNT` fallback `LOADPCT` |
 | `1.3.6.1.4.1.318.1.1.1.4.2.4.0` | output current | `OUTCURNT` |
 | `1.3.6.1.4.1.318.1.1.1.4.2.5.0` | output source | `STATUS` |
+| `1.3.6.1.4.1.318.1.1.1.4.3.1.0` | high precision output voltage | `OUTPUTV * 10` |
+| `1.3.6.1.4.1.318.1.1.1.4.3.2.0` | high precision output frequency | `LINEFREQ * 10` |
+| `1.3.6.1.4.1.318.1.1.1.4.3.3.0` | high precision output load | `LOADAPNT * 10` fallback `LOADPCT * 10` |
+| `1.3.6.1.4.1.318.1.1.1.4.3.4.0` | high precision output current | `OUTCURNT * 10` |
 | `1.3.6.1.4.1.318.1.1.1.5.2.1.0` | nominal output voltage | state/default |
 | `1.3.6.1.4.1.318.1.1.1.5.2.2.0` | nominal watts | `NOMPOWER` |
 | `1.3.6.1.4.1.318.1.1.1.5.2.3.0` | nominal VA | `NOMAPNT` |
@@ -41,6 +50,8 @@ PUG exposes a safe read-only subset of APC PowerNet OIDs. It does not implement 
 | `1` | unknown |
 | `2` | on line |
 | `3` | on battery |
+| `4` | smart boost |
+| `6` | bypass |
 
 These values are covered by tests for the QNAP-facing states observed so far. Additional firmware captures should still be checked when available.
 

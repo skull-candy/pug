@@ -30,3 +30,4 @@ This project follows the spirit of Keep a Changelog. Update this file for every 
 - Individual MQTT topics for normalized values, including restored Home Assistant temperature publishing via `internal_temperature_c`.
 - Redrawn Web UI power-flow diagram around line-interactive UPS topology with clearer AVR, bypass, battery, inverter, and load blocks.
 - Corrected APC PowerNet battery OID mappings and SNMP types for LibreNMS compatibility.
+- Added APC PowerNet input/output frequency, high-precision voltage/load/current, output status, and apparent-load mappings for LibreNMS.

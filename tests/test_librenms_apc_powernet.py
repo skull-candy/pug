@@ -35,8 +35,19 @@ def test_librenms_apc_battery_oids_match_real_apcaccess_sample() -> None:
     assert _value("1.3.6.1.4.1.318.1.1.1.2.2.4.0", state) == 2
     assert _value("1.3.6.1.4.1.318.1.1.1.2.2.8.0", state) == 54
     assert _value("1.3.6.1.4.1.318.1.1.1.3.2.1.0", state) == 225
+    assert _value("1.3.6.1.4.1.318.1.1.1.3.2.4.0", state) == 50
+    assert _value("1.3.6.1.4.1.318.1.1.1.3.3.1.0", state) == 2246
+    assert _value("1.3.6.1.4.1.318.1.1.1.3.3.4.0", state) == 500
+    assert _value("1.3.6.1.4.1.318.1.1.1.4.1.1.0", state) == 2
     assert _value("1.3.6.1.4.1.318.1.1.1.4.2.1.0", state) == 223
-    assert _value("1.3.6.1.4.1.318.1.1.1.4.2.3.0", state) == 27
+    assert _value("1.3.6.1.4.1.318.1.1.1.4.2.2.0", state) == 50
+    assert _value("1.3.6.1.4.1.318.1.1.1.4.2.3.0", state) == 29
+    assert _value("1.3.6.1.4.1.318.1.1.1.4.2.4.0", state) == 4
+    assert _value("1.3.6.1.4.1.318.1.1.1.4.2.5.0", state) == 2
+    assert _value("1.3.6.1.4.1.318.1.1.1.4.3.1.0", state) == 2232
+    assert _value("1.3.6.1.4.1.318.1.1.1.4.3.2.0", state) == 500
+    assert _value("1.3.6.1.4.1.318.1.1.1.4.3.3.0", state) == 286
+    assert _value("1.3.6.1.4.1.318.1.1.1.4.3.4.0", state) == 38
 
 
 def _value(oid: str, state):

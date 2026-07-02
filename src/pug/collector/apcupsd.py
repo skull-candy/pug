@@ -52,7 +52,7 @@ def parse_apcupsd_status(text: str) -> UPSState:
         output_current=_float_value(raw.get("OUTCURNT")),
         line_frequency=_float_value(raw.get("LINEFREQ")),
         load_percent=_int_value(raw.get("LOADPCT")),
-        load_va_percent=_int_value(raw.get("LOADPCT")),
+        load_va_percent=_int_value(raw.get("LOADAPNT")) or _int_value(raw.get("LOADPCT")),
         internal_temperature_c=_float_value(raw.get("ITEMP")),
         nominal_output_voltage=_int_value(raw.get("NOMOUTV")) or 230,
         nominal_power_watts=_int_value(raw.get("NOMPOWER")),
