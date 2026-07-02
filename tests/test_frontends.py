@@ -37,8 +37,12 @@ def test_homeassistant_discovery_payloads_include_battery_sensor() -> None:
     topic = "homeassistant/sensor/powerpi_ups/battery_charge/config"
     assert topic in payloads
     assert payloads[topic]["state_topic"] == "powerpi/ups/battery_charge_percent"
+    assert payloads[topic]["device_class"] == "battery"
+    assert payloads[topic]["state_class"] == "measurement"
     assert payloads["homeassistant/sensor/powerpi_ups/status/config"]["state_topic"] == "powerpi/ups/status"
     assert payloads["homeassistant/binary_sensor/powerpi_ups/online/config"]["state_topic"] == "powerpi/ups/online"
+    assert payloads["homeassistant/binary_sensor/powerpi_ups/online/config"]["device_class"] == "connectivity"
+    assert payloads["homeassistant/binary_sensor/powerpi_ups/replace_battery/config"]["device_class"] == "problem"
     assert payloads["homeassistant/sensor/powerpi_ups/temperature/config"]["state_topic"] == "powerpi/ups/internal_temperature_c"
     assert payloads["homeassistant/sensor/powerpi_ups/temperature/config"]["unit_of_measurement"] == "°C"
 
@@ -49,6 +53,40 @@ def test_homeassistant_discovery_payloads_include_raw_sensors() -> None:
     topic = "homeassistant/sensor/powerpi_ups_raw/selftest/config"
     assert topic in payloads
     assert payloads[topic]["state_topic"] == "powerpi/ups/raw/selftest"
+    assert payloads[topic]["entity_category"] == "diagnostic"
+
+
+def test_homeassistant_discovery_payloads_type_all_normalized_sensors() -> None:
+    payloads = discovery_payloads(simulator_state(), "powerpi/ups")
+
+    assert payloads["homeassistant/sensor/powerpi_ups/output_current/config"]["device_class"] == "current"
+    assert payloads["homeassistant/sensor/powerpi_ups/output_current/config"]["unit_of_measurement"] == "A"
+    assert payloads["homeassistant/sensor/powerpi_ups/line_frequency/config"]["device_class"] == "frequency"
+    assert payloads["homeassistant/sensor/powerpi_ups/line_frequency/config"]["unit_of_measurement"] == "Hz"
+    assert payloads["homeassistant/sensor/powerpi_ups/load/config"]["unit_of_measurement"] == "%"
+    assert "device_class" not in payloads["homeassistant/sensor/powerpi_ups/load/config"]
+    assert payloads["homeassistant/sensor/powerpi_ups/load_va/config"]["unit_of_measurement"] == "%"
+    assert payloads["homeassistant/sensor/powerpi_ups/battery_voltage/config"]["device_class"] == "voltage"
+    assert payloads["homeassistant/sensor/powerpi_ups/nominal_power/config"]["device_class"] == "power"
+    assert payloads["homeassistant/sensor/powerpi_ups/nominal_power/config"]["entity_category"] == "diagnostic"
+
+
+def test_homeassistant_discovery_payloads_type_apcupsd_raw_sensors() -> None:
+    payloads = discovery_payloads(
+        simulator_state().updated(raw={"LINEV": "221.7 Volts", "OUTCURNT": "3.84 Amps", "LINEFREQ": "50.0 Hz"}),
+        "powerpi/ups",
+    )
+
+    linev = payloads["homeassistant/sensor/powerpi_ups_raw/linev/config"]
+    current = payloads["homeassistant/sensor/powerpi_ups_raw/outcurnt/config"]
+    frequency = payloads["homeassistant/sensor/powerpi_ups_raw/linefreq/config"]
+    assert linev["device_class"] == "voltage"
+    assert linev["unit_of_measurement"] == "V"
+    assert current["device_class"] == "current"
+    assert current["unit_of_measurement"] == "A"
+    assert frequency["device_class"] == "frequency"
+    assert frequency["unit_of_measurement"] == "Hz"
+    assert linev["value_template"] == "{{ value | regex_findall_index('[-+]?[0-9]*\\.?[0-9]+') | float }}"
 
 
 def test_status_page_escapes_html() -> None:

@@ -29,5 +29,6 @@ This file tracks known follow-up work. Update it with every codebase change, eve
 - Redrew the Web UI UPS diagram to better match line-interactive APC behavior.
 - Corrected APC PowerNet battery OID mappings and SNMP types for LibreNMS compatibility.
 - Added APC PowerNet frequency, high-precision voltage/load/current, output status, and apparent-load mappings for LibreNMS.
+- Expanded Home Assistant MQTT discovery metadata for normalized and known raw APC sensors with correct units, device classes, state classes, and numeric extraction templates.
 - Added project docs, config example, systemd service, and tests.
 - Added maintenance rule for `CHANGELOG.md` and `TODO.md`.
