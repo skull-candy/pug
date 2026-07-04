@@ -15,6 +15,7 @@ from pug.frontends.http import (
     render_raw_stats_page,
     render_settings_page,
     render_updates_page,
+    schedule_service_restart,
     tail_log_lines,
 )
 from pug.frontends.prometheus import render_metrics
@@ -182,6 +183,28 @@ def test_settings_page_contains_configuration_form() -> None:
     assert "Self test command" in page
     assert "Republish Discovery" in page
     assert "/homeassistant/rediscover" in page
+    assert "restarts the service" in page
+
+
+def test_config_save_restart_is_scheduled(monkeypatch) -> None:
+    calls = []
+
+    class FakeThread:
+        def __init__(self, *, target, name, daemon):
+            calls.append((target, name, daemon))
+
+        def start(self):
+            calls.append("started")
+
+    def fake_restart() -> None:
+        pass
+
+    monkeypatch.setattr("pug.frontends.http.Thread", FakeThread)
+    monkeypatch.setattr("pug.frontends.http.restart_service_later", fake_restart)
+
+    schedule_service_restart()
+
+    assert calls == [(fake_restart, "config-service-restarter", True), "started"]
 
 
 def test_updates_page_contains_check_and_install_actions() -> None:

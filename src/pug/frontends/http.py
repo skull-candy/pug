@@ -32,7 +32,7 @@ from pug.frontends.mqtt import publish_homeassistant_rediscovery
 from pug.frontends.prometheus import render_metrics
 from pug.raw_stats import state_payload
 from pug.state import StateStore
-from pug.updater import PUBLIC_REPO_URL, UpdateManager, UpdateSnapshot
+from pug.updater import PUBLIC_REPO_URL, SERVICE_NAME, UpdateManager, UpdateSnapshot, restart_service_later
 
 LOGGER = logging.getLogger(__name__)
 
@@ -238,10 +238,11 @@ class HttpFrontend:
                     "text/html; charset=utf-8",
                     render_message_page(
                         "Configuration Saved",
-                        "Settings were saved. Restart the service to apply listener, backend, SNMP, and MQTT runtime changes.",
+                        f"Settings were saved. Restarting the {SERVICE_NAME} service to apply runtime changes.",
                         config,
                     ).encode(),
                 )
+                schedule_service_restart()
 
             def log_message(self, format: str, *args: Any) -> None:
                 LOGGER.debug("HTTP %s - %s", self.client_address[0], format % args)
@@ -264,6 +265,10 @@ class HttpFrontend:
         except (ConfigError, OSError):
             LOGGER.exception("failed to reload config for Web UI")
         return self.config
+
+
+def schedule_service_restart() -> None:
+    Thread(target=restart_service_later, name="config-service-restarter", daemon=True).start()
 
 
 def config_from_form(form: dict[str, list[str]]) -> AppConfig:
@@ -969,7 +974,7 @@ def render_settings_page(config: AppConfig) -> str:
         f"""
         <section>
           <h1>Settings</h1>
-          <p class="muted">Save writes config.yaml. Restart the service to apply backend, listener, SNMP, and MQTT runtime changes.</p>
+          <p class="muted">Save writes config.yaml and restarts the service to apply backend, listener, SNMP, and MQTT runtime changes.</p>
           {render_config_form(config)}
           <div class="section-head" style="margin-top:18px;">
             <div>

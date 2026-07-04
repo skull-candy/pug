@@ -31,7 +31,7 @@ The settings page at `/settings` includes a configuration form for:
 - Log file path and log tail line count.
 - Diagnostics preparation/restore commands, apctest menu selections, and command timeout.
 
-Saving the form writes `config.yaml`. Restart the service to apply backend, listener, SNMP, and MQTT runtime changes.
+Saving the form writes `config.yaml` and restarts the `powerpi-ups-gateway` service to apply backend, listener, SNMP, and MQTT runtime changes.
 
 The logs page reads only the last configured number of lines from the configured PUG log file and apcupsd events file. It does not load full files into memory. The default apcupsd events path is `/var/log/apcupsd.events`, and it can be changed from Settings.
 
