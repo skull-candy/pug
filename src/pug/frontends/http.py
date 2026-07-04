@@ -123,6 +123,8 @@ class HttpFrontend:
                         self._send_json(config_to_public_dict(config))
                     else:
                         self._send_json({"error": "api disabled"}, status=404)
+                elif self.path == "/api/diagnostics":
+                    self._send_json(diagnostics_api_payload(state.to_dict(), frontend.diagnostics.snapshot()))
                 elif self.path == "/metrics":
                     if config.http.prometheus_enabled:
                         self._send(200, "text/plain; version=0.0.4; charset=utf-8", render_metrics(state).encode())
@@ -145,21 +147,22 @@ class HttpFrontend:
                     self._send_json({"error": "not found"}, status=404)
 
             def do_POST(self) -> None:
-                if self.path == "/diagnostics":
+                if self.path == "/api/diagnostics/start":
                     length = int(self.headers.get("Content-Length", "0"))
                     body = self.rfile.read(length).decode("utf-8")
                     form = parse_qs(body, keep_blank_values=True)
                     config = frontend.current_config()
                     try:
                         started = frontend.diagnostics.start(_field(form, "action"), config.diagnostics)
-                        message = "Diagnostic started." if started else "Another diagnostic is already running."
+                        self._send_json(
+                            {
+                                "ok": started,
+                                "message": "Diagnostic started." if started else "Another diagnostic is already running.",
+                                "diagnostic": frontend.diagnostics.snapshot().to_dict(),
+                            }
+                        )
                     except ValueError as exc:
-                        message = str(exc)
-                    self._send(
-                        200,
-                        "text/html; charset=utf-8",
-                        render_message_page("Diagnostics", message, config, back_href="/diagnostics").encode(),
-                    )
+                        self._send_json({"ok": False, "message": str(exc)}, status=400)
                     return
                 if self.path != "/config":
                     self._send_json({"error": "not found"}, status=404)
@@ -251,6 +254,8 @@ def config_from_form(form: dict[str, list[str]]) -> AppConfig:
             web_tail_lines=int(_field(form, "logging_web_tail_lines")),
         ),
         diagnostics=DiagnosticsConfig(
+            before_command=parse_command(_field(form, "diagnostics_before_command")),
+            after_command=parse_command(_field(form, "diagnostics_after_command")),
             self_test_command=parse_command(_field(form, "diagnostics_self_test_command")),
             self_test_selection=_field(form, "diagnostics_self_test_selection"),
             battery_calibration_command=parse_command(_field(form, "diagnostics_battery_calibration_command")),
@@ -302,6 +307,8 @@ def config_to_public_dict(config: AppConfig) -> dict[str, Any]:
             "web_tail_lines": config.logging.web_tail_lines,
         },
         "diagnostics": {
+            "before_command": config.diagnostics.before_command,
+            "after_command": config.diagnostics.after_command,
             "self_test_command": config.diagnostics.self_test_command,
             "self_test_selection": config.diagnostics.self_test_selection,
             "battery_calibration_command": config.diagnostics.battery_calibration_command,
@@ -309,6 +316,10 @@ def config_to_public_dict(config: AppConfig) -> dict[str, Any]:
             "command_timeout_seconds": config.diagnostics.command_timeout_seconds,
         },
     }
+
+
+def diagnostics_api_payload(state: dict[str, Any], diagnostic: DiagnosticSnapshot) -> dict[str, Any]:
+    return {"state": state, "diagnostic": diagnostic.to_dict()}
 
 
 def read_ups_icon(filename: str) -> bytes | None:
@@ -383,13 +394,14 @@ def render_raw_stats_page(state: dict[str, Any], config: AppConfig) -> str:
     )
 
 
-def page_shell(title: str, active: str, content: str) -> str:
+def page_shell(title: str, active: str, content: str, auto_refresh: bool = True) -> str:
+    refresh = '<meta http-equiv="refresh" content="30">' if auto_refresh else ""
     return f"""<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta http-equiv="refresh" content="30">
+  {refresh}
   <title>{_escape(title)} - PowerPi UPS Gateway</title>
   <style>
     :root {{ color-scheme: light; --blue:#075eb5; --blue2:#0b73ce; --ink:#17202a; --muted:#667085; --line:#d7dee8; --bg:#f3f6fa; --card:#ffffff; --good:#16a34a; --warn:#d97706; --bad:#dc2626; }}
@@ -825,6 +837,11 @@ def render_diagnostics_page(state: dict[str, Any], config: AppConfig, diagnostic
     finished = display_value("last_update", diagnostic.finished_at.isoformat() if diagnostic.finished_at else "")
     return_code = "-" if diagnostic.return_code is None else str(diagnostic.return_code)
     busy = diagnostic.status == "running"
+    warning = (
+        "This will temporarily stop apcupsd so apctest can own the UPS connection. "
+        "Monitoring is unavailable while these diagnostics run. "
+        "Until the diagnostic finishes, PUG cannot monitor live UPS status, and battery calibration may intentionally discharge the UPS for a long time."
+    )
     return page_shell(
         "Diagnostics",
         "diagnostics",
@@ -835,43 +852,108 @@ def render_diagnostics_page(state: dict[str, Any], config: AppConfig, diagnostic
               <h1>Diagnostics</h1>
               <p class="muted">Live UPS state and apcupsd diagnostic actions.</p>
             </div>
-            <span class="health {'warn' if busy else 'ok'}">{_escape(diagnostic.status.title())}</span>
+            <span id="diagnostic-status-pill" class="health {'warn' if busy else 'ok'}">{_escape(diagnostic.status.title())}</span>
           </div>
+          <p class="hint">{_escape(warning)}</p>
           <div class="diagnostic-status">
-            <dl class="detail-item"><dt>UPS Status</dt><dd>{_escape(display_value("status_text", state.get("status_text", "-")))}</dd></dl>
-            <dl class="detail-item"><dt>Battery Charge</dt><dd>{_escape(display_value("battery_charge_percent", state.get("battery_charge_percent")))}</dd></dl>
-            <dl class="detail-item"><dt>Runtime Remaining</dt><dd>{_escape(display_value("runtime_minutes", state.get("runtime_minutes")))}</dd></dl>
-            <dl class="detail-item"><dt>Self Test Result</dt><dd>{_escape(str(state.get("raw", {}).get("SELFTEST", "-")))}</dd></dl>
+            <dl class="detail-item"><dt>UPS Status</dt><dd id="diag-ups-status">{_escape(display_value("status_text", state.get("status_text", "-")))}</dd></dl>
+            <dl class="detail-item"><dt>Battery Charge</dt><dd id="diag-battery-charge">{_escape(display_value("battery_charge_percent", state.get("battery_charge_percent")))}</dd></dl>
+            <dl class="detail-item"><dt>Runtime Remaining</dt><dd id="diag-runtime">{_escape(display_value("runtime_minutes", state.get("runtime_minutes")))}</dd></dl>
+            <dl class="detail-item"><dt>Self Test Result</dt><dd id="diag-self-test">{_escape(str(state.get("raw", {}).get("SELFTEST", "-")))}</dd></dl>
           </div>
           <div class="actions">
-            <form method="post" action="/diagnostics">
-              <input type="hidden" name="action" value="self_test">
-              <button type="submit"{' disabled' if busy else ''}>Start Self Test</button>
-            </form>
-            <form method="post" action="/diagnostics">
-              <input type="hidden" name="action" value="battery_calibration">
-              <button class="danger" type="submit"{' disabled' if busy else ''}>Start Battery Calibration</button>
-            </form>
+            <button id="start-self-test" type="button" data-action="self_test"{' disabled' if busy else ''}>Start Self Test</button>
+            <button id="start-calibration" class="danger" type="button" data-action="battery_calibration"{' disabled' if busy else ''}>Start Battery Calibration</button>
           </div>
         </section>
         <section>
           <div class="section-head">
             <div>
               <h2>Test Status</h2>
-              <p class="muted">Refreshes automatically with the rest of the Web UI.</p>
+              <p class="muted">Updates live without reloading this page.</p>
             </div>
-            <a class="button secondary" href="/diagnostics">Refresh</a>
+            <button id="refresh-diagnostics" class="button secondary" type="button">Refresh</button>
           </div>
           <div class="diagnostic-status">
-            <dl class="detail-item"><dt>Action</dt><dd>{_escape(action)}</dd></dl>
-            <dl class="detail-item"><dt>Started</dt><dd>{_escape(started)}</dd></dl>
-            <dl class="detail-item"><dt>Finished</dt><dd>{_escape(finished)}</dd></dl>
-            <dl class="detail-item"><dt>Return Code</dt><dd>{_escape(return_code)}</dd></dl>
+            <dl class="detail-item"><dt>Action</dt><dd id="diag-action">{_escape(action)}</dd></dl>
+            <dl class="detail-item"><dt>Started</dt><dd id="diag-started">{_escape(started)}</dd></dl>
+            <dl class="detail-item"><dt>Finished</dt><dd id="diag-finished">{_escape(finished)}</dd></dl>
+            <dl class="detail-item"><dt>Return Code</dt><dd id="diag-return-code">{_escape(return_code)}</dd></dl>
           </div>
-          {'<p class="muted">' + _escape(diagnostic.error) + '</p>' if diagnostic.error else ''}
-          <pre class="log-view">{output or 'No diagnostic output yet.'}</pre>
+          <p id="diag-error" class="muted">{_escape(diagnostic.error)}</p>
+          <pre id="diag-output" class="log-view">{output or 'No diagnostic output yet.'}</pre>
         </section>
+        <script>
+        (() => {{
+          const warning = "{_escape(warning)}";
+          const labels = {{ self_test: "self test", battery_calibration: "battery calibration" }};
+          const fields = {{
+            status: document.getElementById("diagnostic-status-pill"),
+            upsStatus: document.getElementById("diag-ups-status"),
+            battery: document.getElementById("diag-battery-charge"),
+            runtime: document.getElementById("diag-runtime"),
+            selfTest: document.getElementById("diag-self-test"),
+            action: document.getElementById("diag-action"),
+            started: document.getElementById("diag-started"),
+            finished: document.getElementById("diag-finished"),
+            returnCode: document.getElementById("diag-return-code"),
+            error: document.getElementById("diag-error"),
+            output: document.getElementById("diag-output"),
+          }};
+          const buttons = [
+            document.getElementById("start-self-test"),
+            document.getElementById("start-calibration"),
+          ];
+          const text = (value, fallback = "-") => {{
+            if (value === null || value === undefined || value === "") return fallback;
+            return String(value);
+          }};
+          const formatTime = (value) => text(value).replace("T", " ").replace("+00:00", " UTC");
+          const setBusy = (busy) => buttons.forEach((button) => button.disabled = busy);
+          const update = (payload) => {{
+            const state = payload.state || {{}};
+            const raw = state.raw || {{}};
+            const diagnostic = payload.diagnostic || {{}};
+            const busy = diagnostic.status === "running";
+            fields.status.textContent = text(diagnostic.status, "idle").replace(/^./, c => c.toUpperCase());
+            fields.status.className = `health ${{busy ? "warn" : "ok"}}`;
+            fields.upsStatus.textContent = text(state.status_text);
+            fields.battery.textContent = state.battery_charge_percent === undefined ? "-" : `${{state.battery_charge_percent}}%`;
+            fields.runtime.textContent = state.runtime_minutes === undefined ? "-" : `${{state.runtime_minutes}} min`;
+            fields.selfTest.textContent = text(raw.SELFTEST);
+            fields.action.textContent = text(labels[diagnostic.action] || diagnostic.action);
+            fields.started.textContent = formatTime(diagnostic.started_at);
+            fields.finished.textContent = formatTime(diagnostic.finished_at);
+            fields.returnCode.textContent = diagnostic.return_code === null || diagnostic.return_code === undefined ? "-" : diagnostic.return_code;
+            fields.error.textContent = text(diagnostic.error, "");
+            fields.output.textContent = diagnostic.output && diagnostic.output.length ? diagnostic.output.join("\\n") : "No diagnostic output yet.";
+            setBusy(busy);
+          }};
+          const refresh = async () => {{
+            const response = await fetch("/api/diagnostics", {{ cache: "no-store" }});
+            if (response.ok) update(await response.json());
+          }};
+          const start = async (action) => {{
+            const label = labels[action] || action;
+            if (!confirm(`Start ${{label}}?\\n\\n${{warning}}`)) return;
+            setBusy(true);
+            const body = new URLSearchParams({{ action }});
+            const response = await fetch("/api/diagnostics/start", {{
+              method: "POST",
+              headers: {{ "Content-Type": "application/x-www-form-urlencoded" }},
+              body,
+            }});
+            const payload = await response.json();
+            if (!payload.ok) alert(payload.message || "Unable to start diagnostic.");
+            await refresh();
+          }};
+          buttons.forEach((button) => button.addEventListener("click", () => start(button.dataset.action)));
+          document.getElementById("refresh-diagnostics").addEventListener("click", refresh);
+          setInterval(refresh, 2000);
+        }})();
+        </script>
         """,
+        auto_refresh=False,
     )
 
 
@@ -1067,7 +1149,10 @@ def render_config_form(config: AppConfig) -> str:
 
   <fieldset>
     <legend>Diagnostics</legend>
+    <p class="hint">The default preparation command stops apcupsd so apctest can access the UPS, and the restore command starts apcupsd again. Monitoring is unavailable while these diagnostics run.</p>
     <div class="grid">
+      <label>Preparation command <input name="diagnostics_before_command" value="{_escape(format_command(config.diagnostics.before_command))}"></label>
+      <label>Restore command <input name="diagnostics_after_command" value="{_escape(format_command(config.diagnostics.after_command))}"></label>
       <label>Self test command <input name="diagnostics_self_test_command" value="{_escape(format_command(config.diagnostics.self_test_command))}"></label>
       <label>Self test menu selection <input name="diagnostics_self_test_selection" value="{_escape(config.diagnostics.self_test_selection)}"></label>
       <label>Battery calibration command <input name="diagnostics_battery_calibration_command" value="{_escape(format_command(config.diagnostics.battery_calibration_command))}"></label>

@@ -165,6 +165,8 @@ def test_settings_page_contains_configuration_form() -> None:
     assert 'action="/config"' in page
     assert "Log file path" in page
     assert "apcupsd events path" in page
+    assert "Preparation command" in page
+    assert "Restore command" in page
     assert "Self test command" in page
 
 
@@ -193,8 +195,10 @@ def test_diagnostics_page_shows_actions_live_status_and_result() -> None:
     page = render_diagnostics_page(state, AppConfig(), snapshot)
 
     assert "Diagnostics" in page
-    assert 'name="action" value="self_test"' in page
-    assert 'name="action" value="battery_calibration"' in page
+    assert 'data-action="self_test"' in page
+    assert 'data-action="battery_calibration"' in page
+    assert "/api/diagnostics/start" in page
+    assert "Monitoring is unavailable while these diagnostics run" in page
     assert "Self Test Result" in page
     assert "PASSED" in page
     assert "TEST PASSED" in page
@@ -241,6 +245,8 @@ def test_config_form_can_disable_methods() -> None:
             "logging_file_path": ["/var/log/pug/pug.log"],
             "logging_apcupsd_events_path": ["/var/log/apcupsd.events"],
             "logging_web_tail_lines": ["300"],
+            "diagnostics_before_command": ["systemctl stop apcupsd"],
+            "diagnostics_after_command": ["systemctl start apcupsd"],
             "diagnostics_self_test_command": ["apctest"],
             "diagnostics_self_test_selection": ["2"],
             "diagnostics_battery_calibration_command": ["apctest"],
@@ -254,6 +260,7 @@ def test_config_form_can_disable_methods() -> None:
     assert config.http.prometheus_enabled is False
     assert config.http.homeassistant_enabled is False
     assert config.mqtt.enabled is False
+    assert config.diagnostics.before_command == ["systemctl", "stop", "apcupsd"]
     assert config.diagnostics.self_test_selection == "2"
 
 

@@ -59,6 +59,8 @@ class LoggingConfig:
 
 @dataclass(frozen=True)
 class DiagnosticsConfig:
+    before_command: list[str] = field(default_factory=lambda: ["systemctl", "stop", "apcupsd"])
+    after_command: list[str] = field(default_factory=lambda: ["systemctl", "start", "apcupsd"])
     self_test_command: list[str] = field(default_factory=lambda: ["apctest"])
     self_test_selection: str = "2"
     battery_calibration_command: list[str] = field(default_factory=lambda: ["apctest"])
@@ -134,6 +136,8 @@ def config_from_mapping(data: dict[str, Any]) -> AppConfig:
             web_tail_lines=int(logging.get("web_tail_lines", 300)),
         ),
         diagnostics=DiagnosticsConfig(
+            before_command=list(diagnostics.get("before_command", ["systemctl", "stop", "apcupsd"])),
+            after_command=list(diagnostics.get("after_command", ["systemctl", "start", "apcupsd"])),
             self_test_command=list(diagnostics.get("self_test_command", ["apctest"])),
             self_test_selection=str(diagnostics.get("self_test_selection", "2")),
             battery_calibration_command=list(diagnostics.get("battery_calibration_command", ["apctest"])),

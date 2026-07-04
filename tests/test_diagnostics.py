@@ -7,6 +7,8 @@ from pug.diagnostics import DiagnosticManager, diagnostic_command
 
 def test_diagnostic_command_maps_actions_to_config() -> None:
     config = DiagnosticsConfig(
+        before_command=[],
+        after_command=[],
         self_test_command=["self"],
         self_test_selection="2",
         battery_calibration_command=["calibrate"],
@@ -24,7 +26,7 @@ def test_diagnostic_manager_runs_command_and_records_result() -> None:
         "-c",
         "import sys; data=sys.stdin.read(); print('input=' + data.replace('\\n', '|'))",
     ]
-    config = DiagnosticsConfig(self_test_command=command, self_test_selection="2", command_timeout_seconds=10)
+    config = DiagnosticsConfig(before_command=[], after_command=[], self_test_command=command, self_test_selection="2", command_timeout_seconds=10)
 
     assert manager.start("self_test", config) is True
     for _ in range(50):

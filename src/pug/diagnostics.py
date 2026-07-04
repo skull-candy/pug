@@ -4,6 +4,7 @@ import subprocess
 import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from typing import Any
 
 from pug.config import DiagnosticsConfig
 
@@ -17,6 +18,17 @@ class DiagnosticSnapshot:
     return_code: int | None = None
     output: list[str] = field(default_factory=list)
     error: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "action": self.action,
+            "started_at": self.started_at.isoformat() if self.started_at else "",
+            "finished_at": self.finished_at.isoformat() if self.finished_at else "",
+            "return_code": self.return_code,
+            "output": list(self.output),
+            "error": self.error,
+        }
 
 
 class DiagnosticManager:
@@ -49,14 +61,31 @@ class DiagnosticManager:
             )
         thread = threading.Thread(
             target=self._run,
-            args=(action, command, input_lines, config.command_timeout_seconds),
+            args=(action, command, input_lines, list(config.before_command), list(config.after_command), config.command_timeout_seconds),
             name=f"diagnostic-{action}",
             daemon=True,
         )
         thread.start()
         return True
 
-    def _run(self, action: str, command: list[str], input_lines: list[str], timeout_seconds: int) -> None:
+    def _run(
+        self,
+        action: str,
+        command: list[str],
+        input_lines: list[str],
+        before_command: list[str],
+        after_command: list[str],
+        timeout_seconds: int,
+    ) -> None:
+        self._append_output("UPS monitoring is paused while this diagnostic owns the UPS connection.")
+        if before_command:
+            before_result = self._run_simple_command("Preparing UPS diagnostic", before_command, timeout_seconds=60)
+            if before_result != 0:
+                self._finish("failed", action, before_result, error="Diagnostic preparation command failed.")
+                return
+
+        return_code: int | None = None
+        error = ""
         try:
             process = subprocess.Popen(
                 command,
@@ -67,28 +96,56 @@ class DiagnosticManager:
                 bufsize=1,
             )
         except OSError as exc:
-            self._finish("failed", action, None, error=str(exc))
+            return_code = None
+            error = str(exc)
+        else:
+            timer = threading.Timer(timeout_seconds, process.kill)
+            timer.start()
+            try:
+                assert process.stdin is not None
+                process.stdin.write("".join(f"{line}\n" for line in input_lines))
+                process.stdin.close()
+                assert process.stdout is not None
+                for line in process.stdout:
+                    self._append_output(line.rstrip("\n"))
+                return_code = process.wait()
+            finally:
+                timer.cancel()
+
+        after_result = 0
+        if after_command:
+            after_result = self._run_simple_command("Restoring UPS monitoring", after_command, timeout_seconds=60)
+
+        if error:
+            self._finish("failed", action, return_code, error=error)
             return
 
-        timer = threading.Timer(timeout_seconds, process.kill)
-        timer.start()
-        try:
-            assert process.stdin is not None
-            process.stdin.write("".join(f"{line}\n" for line in input_lines))
-            process.stdin.close()
-            assert process.stdout is not None
-            for line in process.stdout:
-                self._append_output(line.rstrip("\n"))
-            return_code = process.wait()
-        finally:
-            timer.cancel()
-
-        if return_code == 0:
+        if after_result != 0:
+            self._finish("failed", action, after_result, error="UPS monitoring restore command failed.")
+        elif return_code == 0:
             self._finish("completed", action, return_code)
-        elif return_code < 0:
+        elif return_code is not None and return_code < 0:
             self._finish("failed", action, return_code, error="Diagnostic command was terminated.")
         else:
             self._finish("failed", action, return_code)
+
+    def _run_simple_command(self, label: str, command: list[str], timeout_seconds: int) -> int:
+        self._append_output(f"{label}: {' '.join(command)}")
+        try:
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=timeout_seconds,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            self._append_output(str(exc))
+            return 1
+        for line in result.stdout.splitlines():
+            self._append_output(line)
+        for line in result.stderr.splitlines():
+            self._append_output(line)
+        return result.returncode
 
     def _append_output(self, line: str) -> None:
         with self._lock:
