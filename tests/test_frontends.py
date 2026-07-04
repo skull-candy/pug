@@ -206,6 +206,11 @@ def test_diagnostics_page_shows_actions_live_status_and_result() -> None:
     assert "/api/diagnostics/start" in page
     assert "Monitoring is unavailable while these diagnostics run" in page
     assert "Self Test Result" in page
+    assert "Test Result" in page
+    assert "Current Stage" in page
+    assert "Last Transfer" in page
+    assert "Show live log" in page
+    assert 'id="diag-output" class="log-view hidden"' in page
     assert "PASSED" in page
     assert "TEST PASSED" in page
 

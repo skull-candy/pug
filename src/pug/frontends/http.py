@@ -339,7 +339,7 @@ def config_to_public_dict(config: AppConfig) -> dict[str, Any]:
 
 
 def diagnostics_api_payload(state: dict[str, Any], diagnostic: DiagnosticSnapshot) -> dict[str, Any]:
-    return {"state": state, "diagnostic": diagnostic.to_dict()}
+    return {"state": state, "diagnostic": diagnostic.to_dict(), "summary": diagnostic_summary(state, diagnostic)}
 
 
 def dashboard_live_payload(state: dict[str, Any]) -> dict[str, str]:
@@ -566,6 +566,14 @@ def page_shell(title: str, active: str, content: str, auto_refresh: bool = False
     .log-view {{ max-height: 68vh; overflow:auto; padding:14px; background:#0b1220; color:#d8e2f1; border-radius:8px; font: 13px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace; white-space:pre-wrap; }}
     .actions {{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; }}
     .diagnostic-status {{ display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:8px; margin:12px 0; }}
+    .switch-row {{ display:flex; align-items:center; justify-content:space-between; gap:12px; margin:14px 0 10px; }}
+    .switch {{ position:relative; display:inline-flex; align-items:center; gap:10px; cursor:pointer; font-weight:700; }}
+    .switch input {{ position:absolute; opacity:0; width:1px; height:1px; }}
+    .slider {{ width:44px; height:24px; border-radius:999px; background:#cbd5e1; position:relative; transition:.2s; }}
+    .slider::after {{ content:""; position:absolute; width:18px; height:18px; top:3px; left:3px; border-radius:50%; background:#fff; box-shadow:0 1px 3px rgba(0,0,0,.25); transition:.2s; }}
+    .switch input:checked + .slider {{ background:var(--blue); }}
+    .switch input:checked + .slider::after {{ transform:translateX(20px); }}
+    .hidden {{ display:none; }}
     .danger {{ background:var(--bad); color:#fff; }}
     @keyframes dash {{ to {{ stroke-dashoffset: -32; }} }}
     @media (max-width: 980px) {{ .cards {{ grid-template-columns: repeat(3, minmax(130px, 1fr)); }} }}
@@ -958,6 +966,64 @@ def render_logs_page(config: AppConfig, lines: list[str], apcupsd_event_lines: l
     )
 
 
+def diagnostic_summary(state: dict[str, Any], diagnostic: DiagnosticSnapshot) -> dict[str, str]:
+    raw = state.get("raw", {})
+    output = "\n".join(diagnostic.output)
+    result = str(raw.get("SELFTEST", "") or "-")
+    for line in reversed(diagnostic.output):
+        if "Result of last self test:" in line:
+            result = line.split("Result of last self test:", 1)[1].strip()
+            break
+    stage = "Idle"
+    lowered = output.lower()
+    if diagnostic.status == "running":
+        if "restoring ups monitoring" in lowered:
+            stage = "Restoring monitoring"
+        elif "waiting for test to complete" in lowered:
+            stage = "Waiting for test"
+        elif "initiating self test" in lowered:
+            stage = "Self-test running"
+        elif "perform battery calibration" in lowered or diagnostic.action == "battery_calibration":
+            stage = "Calibration running"
+        else:
+            stage = "Preparing"
+    elif diagnostic.status in {"completed", "failed"}:
+        stage = diagnostic.status.title()
+    last_event = "-"
+    for line in reversed(diagnostic.output):
+        clean = line.strip()
+        if clean and not clean[0].isdigit() and "select function" not in clean.lower():
+            last_event = clean
+            break
+    return {
+        "test_result": result,
+        "stage": stage,
+        "last_event": last_event,
+        "last_transfer": str(raw.get("LASTXFER", "-")),
+        "transfer_count": str(raw.get("NUMXFERS", "-")),
+        "time_on_battery": str(raw.get("TONBATT", raw.get("CUMONBATT", "-"))),
+        "last_on_battery": str(raw.get("XONBATT", "-")),
+        "last_off_battery": str(raw.get("XOFFBATT", "-")),
+    }
+
+
+def render_diagnostic_summary_cards(summary: dict[str, str]) -> str:
+    cards = [
+        ("Test Result", "test_result"),
+        ("Current Stage", "stage"),
+        ("Latest Event", "last_event"),
+        ("Last Transfer", "last_transfer"),
+        ("Transfer Count", "transfer_count"),
+        ("Time On Battery", "time_on_battery"),
+        ("Last On Battery", "last_on_battery"),
+        ("Last Off Battery", "last_off_battery"),
+    ]
+    return "".join(
+        f'<dl class="detail-item"><dt>{_escape(label)}</dt><dd id="diag-summary-{key}">{_escape(summary.get(key, "-"))}</dd></dl>'
+        for label, key in cards
+    )
+
+
 def render_diagnostics_page(state: dict[str, Any], config: AppConfig, diagnostic: DiagnosticSnapshot) -> str:
     output = "\n".join(_escape(line.rstrip("\n")) for line in diagnostic.output)
     action = diagnostic_label(diagnostic.action) if diagnostic.action else "-"
@@ -965,6 +1031,7 @@ def render_diagnostics_page(state: dict[str, Any], config: AppConfig, diagnostic
     finished = display_value("last_update", diagnostic.finished_at.isoformat() if diagnostic.finished_at else "")
     return_code = "-" if diagnostic.return_code is None else str(diagnostic.return_code)
     busy = diagnostic.status == "running"
+    summary = diagnostic_summary(state, diagnostic)
     warning = (
         "This will temporarily stop apcupsd so apctest can own the UPS connection. "
         "Monitoring is unavailable while these diagnostics run. "
@@ -1008,8 +1075,15 @@ def render_diagnostics_page(state: dict[str, Any], config: AppConfig, diagnostic
             <dl class="detail-item"><dt>Finished</dt><dd id="diag-finished">{_escape(finished)}</dd></dl>
             <dl class="detail-item"><dt>Return Code</dt><dd id="diag-return-code">{_escape(return_code)}</dd></dl>
           </div>
+          <div class="diagnostic-status" id="diag-summary-cards">
+            {render_diagnostic_summary_cards(summary)}
+          </div>
           <p id="diag-error" class="muted">{_escape(diagnostic.error)}</p>
-          <pre id="diag-output" class="log-view">{output or 'No diagnostic output yet.'}</pre>
+          <div class="switch-row">
+            <span class="muted">Raw apctest output is hidden by default.</span>
+            <label class="switch"><input id="show-live-log" type="checkbox"><span class="slider"></span><span>Show live log</span></label>
+          </div>
+          <pre id="diag-output" class="log-view hidden">{output or 'No diagnostic output yet.'}</pre>
         </section>
         <script>
         (() => {{
@@ -1027,6 +1101,17 @@ def render_diagnostics_page(state: dict[str, Any], config: AppConfig, diagnostic
             returnCode: document.getElementById("diag-return-code"),
             error: document.getElementById("diag-error"),
             output: document.getElementById("diag-output"),
+            logToggle: document.getElementById("show-live-log"),
+          }};
+          const summaryFields = {{
+            test_result: document.getElementById("diag-summary-test_result"),
+            stage: document.getElementById("diag-summary-stage"),
+            last_event: document.getElementById("diag-summary-last_event"),
+            last_transfer: document.getElementById("diag-summary-last_transfer"),
+            transfer_count: document.getElementById("diag-summary-transfer_count"),
+            time_on_battery: document.getElementById("diag-summary-time_on_battery"),
+            last_on_battery: document.getElementById("diag-summary-last_on_battery"),
+            last_off_battery: document.getElementById("diag-summary-last_off_battery"),
           }};
           const buttons = [
             document.getElementById("start-self-test"),
@@ -1042,6 +1127,7 @@ def render_diagnostics_page(state: dict[str, Any], config: AppConfig, diagnostic
             const state = payload.state || {{}};
             const raw = state.raw || {{}};
             const diagnostic = payload.diagnostic || {{}};
+            const summary = payload.summary || {{}};
             const busy = diagnostic.status === "running";
             fields.status.textContent = text(diagnostic.status, "idle").replace(/^./, c => c.toUpperCase());
             fields.status.className = `health ${{busy ? "warn" : "ok"}}`;
@@ -1055,6 +1141,9 @@ def render_diagnostics_page(state: dict[str, Any], config: AppConfig, diagnostic
             fields.returnCode.textContent = diagnostic.return_code === null || diagnostic.return_code === undefined ? "-" : diagnostic.return_code;
             fields.error.textContent = text(diagnostic.error, "");
             fields.output.textContent = diagnostic.output && diagnostic.output.length ? diagnostic.output.join("\\n") : "No diagnostic output yet.";
+            Object.keys(summaryFields).forEach((key) => {{
+              if (summaryFields[key]) summaryFields[key].textContent = text(summary[key]);
+            }});
             setBusy(busy);
           }};
           const refresh = async () => {{
@@ -1077,6 +1166,9 @@ def render_diagnostics_page(state: dict[str, Any], config: AppConfig, diagnostic
           }};
           buttons.forEach((button) => button.addEventListener("click", () => start(button.dataset.action)));
           document.getElementById("refresh-diagnostics").addEventListener("click", refresh);
+          fields.logToggle.addEventListener("change", () => {{
+            fields.output.classList.toggle("hidden", !fields.logToggle.checked);
+          }});
           setInterval(refresh, 2000);
         }})();
         </script>
