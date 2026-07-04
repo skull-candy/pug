@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import datetime
 from importlib.resources import files
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -9,6 +10,7 @@ from threading import Event
 from typing import Any
 from urllib.parse import parse_qs
 
+from pug import __version__
 from pug.config import (
     AppConfig,
     BackendConfig,
@@ -30,6 +32,7 @@ from pug.frontends.mqtt import publish_homeassistant_rediscovery
 from pug.frontends.prometheus import render_metrics
 from pug.raw_stats import state_payload
 from pug.state import StateStore
+from pug.updater import PUBLIC_REPO_URL, UpdateManager, UpdateSnapshot
 
 LOGGER = logging.getLogger(__name__)
 
@@ -49,6 +52,7 @@ class HttpFrontend:
         self.listen = listen
         self.port = port
         self.diagnostics = DiagnosticManager()
+        self.updater = UpdateManager()
 
     def serve_forever(self, stop: Event) -> None:
         handler = self._handler()
@@ -103,6 +107,12 @@ class HttpFrontend:
                         "text/html; charset=utf-8",
                         render_diagnostics_page(state.to_dict(), config, frontend.diagnostics.snapshot()).encode(),
                     )
+                elif self.path == "/updates":
+                    self._send(
+                        200,
+                        "text/html; charset=utf-8",
+                        render_updates_page(frontend.updater.snapshot()).encode(),
+                    )
                 elif self.path == "/raw":
                     self._send(
                         200,
@@ -132,6 +142,8 @@ class HttpFrontend:
                         self._send_json({"error": "api disabled"}, status=404)
                 elif self.path == "/api/diagnostics":
                     self._send_json(diagnostics_api_payload(state.to_dict(), frontend.diagnostics.snapshot()))
+                elif self.path == "/api/updates":
+                    self._send_json(frontend.updater.snapshot().to_dict())
                 elif self.path == "/metrics":
                     if config.http.prometheus_enabled:
                         self._send(200, "text/plain; version=0.0.4; charset=utf-8", render_metrics(state).encode())
@@ -170,6 +182,19 @@ class HttpFrontend:
                         )
                     except ValueError as exc:
                         self._send_json({"ok": False, "message": str(exc)}, status=400)
+                    return
+                if self.path == "/api/updates/check":
+                    self._send_json(frontend.updater.check().to_dict())
+                    return
+                if self.path == "/api/updates/install":
+                    started = frontend.updater.start_install()
+                    self._send_json(
+                        {
+                            "ok": started,
+                            "message": "Update install started." if started else "Update install already running.",
+                            "update": frontend.updater.snapshot().to_dict(),
+                        }
+                    )
                     return
                 if self.path == "/homeassistant/rediscover":
                     config = frontend.current_config()
@@ -493,11 +518,18 @@ def page_shell(title: str, active: str, content: str, auto_refresh: bool = False
     .topbar {{ position: sticky; top: 0; z-index: 5; display:flex; align-items:center; justify-content:space-between; gap:16px; padding: 12px 24px; border-bottom:1px solid var(--line); background: rgba(255,255,255,.94); backdrop-filter: blur(10px); }}
     .brand {{ font-weight: 800; color: var(--blue); text-decoration:none; }}
     nav {{ display:flex; gap:8px; flex-wrap:wrap; }}
-    nav a, .button {{ display:inline-flex; align-items:center; justify-content:center; min-height:36px; padding:8px 12px; border-radius:7px; text-decoration:none; color:var(--ink); border:1px solid transparent; }}
+    nav a, .button, .admin-button {{ display:inline-flex; align-items:center; justify-content:center; min-height:36px; padding:8px 12px; border-radius:7px; text-decoration:none; color:var(--ink); border:1px solid transparent; background:transparent; }}
     nav a.active {{ background:#eaf3ff; border-color:#bddcff; color:var(--blue); }}
+    .admin-menu {{ position:relative; }}
+    .admin-button {{ cursor:pointer; }}
+    .admin-panel {{ display:none; position:absolute; right:0; top:42px; min-width:210px; padding:8px; border:1px solid var(--line); border-radius:8px; background:#fff; box-shadow:0 12px 28px rgba(16,24,40,.16); z-index:10; }}
+    .admin-menu:hover .admin-panel, .admin-menu:focus-within .admin-panel {{ display:grid; gap:4px; }}
+    .admin-panel a {{ justify-content:flex-start; }}
+    .admin-button.active {{ background:#eaf3ff; border-color:#bddcff; color:var(--blue); }}
     .button {{ background:var(--blue); color:#fff; border:0; }}
     .button.secondary {{ background:#eef2f7; color:var(--ink); }}
-    main {{ max-width: 1180px; margin: 0 auto; padding: 18px; }}
+    main {{ max-width: 1180px; margin: 0 auto; padding: 18px; min-height:calc(100vh - 112px); }}
+    .footer {{ display:flex; align-items:center; justify-content:space-between; gap:16px; padding:12px 24px; color:var(--muted); border-top:1px solid var(--line); background:#fff; font-size:13px; }}
     section, .hero-panel {{ background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 18px; margin: 0 0 16px; box-shadow: 0 1px 2px rgba(16,24,40,.04); }}
     h1, h2 {{ margin: 0; letter-spacing: 0; }}
     h1 {{ font-size: 22px; }}
@@ -577,7 +609,7 @@ def page_shell(title: str, active: str, content: str, auto_refresh: bool = False
     .danger {{ background:var(--bad); color:#fff; }}
     @keyframes dash {{ to {{ stroke-dashoffset: -32; }} }}
     @media (max-width: 980px) {{ .cards {{ grid-template-columns: repeat(3, minmax(130px, 1fr)); }} }}
-    @media (max-width: 700px) {{ main {{ padding:12px; }} section, .hero-panel {{ padding:14px; }} .cards {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }} .topbar {{ align-items:flex-start; flex-direction:column; }} svg.power.desktop {{ display:none; }} svg.power.mobile {{ display:block; }} .diagram-card {{ padding:8px; }} }}
+    @media (max-width: 700px) {{ main {{ padding:12px; }} section, .hero-panel {{ padding:14px; }} .cards {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }} .topbar {{ align-items:flex-start; flex-direction:column; }} .admin-panel {{ left:0; right:auto; }} .footer {{ align-items:flex-start; flex-direction:column; }} svg.power.desktop {{ display:none; }} svg.power.mobile {{ display:block; }} .diagram-card {{ padding:8px; }} }}
   </style>
 </head>
 <body>
@@ -585,14 +617,24 @@ def page_shell(title: str, active: str, content: str, auto_refresh: bool = False
     <a class="brand" href="/ui">PowerPi UPS Gateway</a>
     <nav>
       <a class="{_active(active, 'dashboard')}" href="/ui">Dashboard</a>
-      <a class="{_active(active, 'raw')}" href="/raw">Raw Stats</a>
-      <a class="{_active(active, 'diagnostics')}" href="/diagnostics">Diagnostics</a>
-      <a class="{_active(active, 'settings')}" href="/settings">Settings</a>
-      <a class="{_active(active, 'logs')}" href="/logs">Logs</a>
-      <a href="/metrics">Metrics</a>
+      <div class="admin-menu">
+        <button class="admin-button {_admin_active(active)}" type="button">Administration</button>
+        <div class="admin-panel">
+          <a class="{_active(active, 'raw')}" href="/raw">Raw Stats</a>
+          <a class="{_active(active, 'diagnostics')}" href="/diagnostics">Diagnostics</a>
+          <a class="{_active(active, 'settings')}" href="/settings">Settings</a>
+          <a class="{_active(active, 'logs')}" href="/logs">Logs</a>
+          <a class="{_active(active, 'updates')}" href="/updates">Updates</a>
+          <a href="/metrics">Metrics</a>
+        </div>
+      </div>
     </nav>
   </header>
   <main>{content}</main>
+  <footer class="footer">
+    <span>Copyright &copy; {datetime.now().year} PowerPi UPS Gateway. Developed By: Ahsan Muhammad</span>
+    <span>Version {__version__}</span>
+  </footer>
 </body>
 </html>
 """
@@ -877,6 +919,16 @@ def _active(active: str, page: str) -> str:
     return "active" if active == page else ""
 
 
+def _admin_active(active: str) -> str:
+    return "active" if active in {"raw", "diagnostics", "settings", "logs", "updates"} else ""
+
+
+def _format_time(value: datetime | None) -> str:
+    if not value:
+        return "-"
+    return value.isoformat().replace("T", " ").replace("+00:00", " UTC")
+
+
 def render_settings_page(config: AppConfig) -> str:
     return page_shell(
         "Settings",
@@ -960,6 +1012,96 @@ def render_logs_page(config: AppConfig, lines: list[str], apcupsd_event_lines: l
           }};
           document.getElementById("refresh-logs").addEventListener("click", refresh);
           setInterval(refresh, 5000);
+        }})();
+        </script>
+        """,
+    )
+
+
+def render_updates_page(snapshot: UpdateSnapshot) -> str:
+    output = "\n".join(_escape(line.rstrip("\n")) for line in snapshot.output)
+    install_disabled = " disabled" if snapshot.status == "installing" or not snapshot.update_available else ""
+    return page_shell(
+        "Updates",
+        "updates",
+        f"""
+        <section>
+          <div class="section-head">
+            <div>
+              <h1>Updates</h1>
+              <p class="muted">Check, download, and install updates from {_escape(PUBLIC_REPO_URL)}.</p>
+            </div>
+            <span id="update-status-pill" class="health {'warn' if snapshot.update_available else 'ok'}">{_escape(snapshot.status.title())}</span>
+          </div>
+          <div class="diagnostic-status">
+            <dl class="detail-item"><dt>Installed Version</dt><dd>{_escape(__version__)}</dd></dl>
+            <dl class="detail-item"><dt>Current Commit</dt><dd id="update-current">{_escape(snapshot.current_commit or "-")}</dd></dl>
+            <dl class="detail-item"><dt>Latest Commit</dt><dd id="update-latest">{_escape(snapshot.latest_commit or "-")}</dd></dl>
+            <dl class="detail-item"><dt>Branch</dt><dd id="update-branch">{_escape(snapshot.branch or "-")}</dd></dl>
+            <dl class="detail-item"><dt>Remote</dt><dd id="update-remote">{_escape(snapshot.remote or PUBLIC_REPO_URL)}</dd></dl>
+            <dl class="detail-item"><dt>Last Check</dt><dd id="update-checked">{_escape(_format_time(snapshot.checked_at))}</dd></dl>
+          </div>
+          <p id="update-message" class="muted">{_escape(snapshot.error)}</p>
+          <div class="actions">
+            <button id="check-updates" type="button">Check for Update</button>
+            <button id="install-update" class="danger" type="button"{install_disabled}>Download and Install</button>
+          </div>
+        </section>
+        <section>
+          <div class="section-head">
+            <div>
+              <h2>Update Progress</h2>
+              <p class="muted">Install uses a fast-forward-only git update, reinstalls PUG, then restarts the systemd service.</p>
+            </div>
+          </div>
+          <pre id="update-output" class="log-view">{output or 'No update activity yet.'}</pre>
+        </section>
+        <script>
+        (() => {{
+          const fields = {{
+            pill: document.getElementById("update-status-pill"),
+            current: document.getElementById("update-current"),
+            latest: document.getElementById("update-latest"),
+            branch: document.getElementById("update-branch"),
+            remote: document.getElementById("update-remote"),
+            checked: document.getElementById("update-checked"),
+            message: document.getElementById("update-message"),
+            output: document.getElementById("update-output"),
+            install: document.getElementById("install-update"),
+          }};
+          const text = (value, fallback = "-") => value === null || value === undefined || value === "" ? fallback : String(value);
+          const formatTime = (value) => text(value).replace("T", " ").replace("+00:00", " UTC");
+          const update = (payload) => {{
+            const installing = payload.status === "installing";
+            fields.pill.textContent = text(payload.status, "idle").replace(/^./, c => c.toUpperCase());
+            fields.pill.className = `health ${{payload.update_available ? "warn" : "ok"}}`;
+            fields.current.textContent = text(payload.current_commit);
+            fields.latest.textContent = text(payload.latest_commit);
+            fields.branch.textContent = text(payload.branch);
+            fields.remote.textContent = text(payload.remote);
+            fields.checked.textContent = formatTime(payload.checked_at);
+            fields.message.textContent = text(payload.error, "");
+            fields.output.textContent = payload.output && payload.output.length ? payload.output.join("\\n") : "No update activity yet.";
+            fields.install.disabled = installing || !payload.update_available;
+          }};
+          const status = async () => {{
+            const response = await fetch("/api/updates", {{ cache: "no-store" }});
+            if (response.ok) update(await response.json());
+          }};
+          document.getElementById("check-updates").addEventListener("click", async () => {{
+            const response = await fetch("/api/updates/check", {{ method: "POST" }});
+            if (response.ok) update(await response.json());
+          }});
+          fields.install.addEventListener("click", async () => {{
+            if (!confirm("Download and install the latest PUG update?\\n\\nThe service will restart after installation.")) return;
+            const response = await fetch("/api/updates/install", {{ method: "POST" }});
+            if (response.ok) {{
+              const payload = await response.json();
+              if (!payload.ok) alert(payload.message || "Update install could not start.");
+              await status();
+            }}
+          }});
+          setInterval(status, 3000);
         }})();
         </script>
         """,

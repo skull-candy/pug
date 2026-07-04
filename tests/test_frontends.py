@@ -14,9 +14,11 @@ from pug.frontends.http import (
     render_logs_page,
     render_raw_stats_page,
     render_settings_page,
+    render_updates_page,
     tail_log_lines,
 )
 from pug.frontends.prometheus import render_metrics
+from pug.updater import UpdateSnapshot
 
 
 def test_prometheus_metrics_include_core_values() -> None:
@@ -122,6 +124,9 @@ def test_dashboard_has_modern_sections_and_no_settings_form() -> None:
     assert "UPS power flow diagram" in page
     assert "/ui/live/dashboard" in page
     assert '<meta http-equiv="refresh" content="30">' not in page
+    assert "Administration" in page
+    assert "Developed By: Ahsan Muhammad" in page
+    assert "Version 0.1.0" in page
     assert "Line / AVR path active" in page
     assert "Line / AVR" in page
     assert "Bypass Path" in page
@@ -139,6 +144,7 @@ def test_dashboard_has_modern_sections_and_no_settings_form() -> None:
     assert 'href="/raw"' in page
     assert "<h2>Raw Backend Stats</h2>" not in page
     assert 'href="/settings"' in page
+    assert 'href="/updates"' in page
     assert 'action="/config"' not in page
 
 
@@ -173,6 +179,17 @@ def test_settings_page_contains_configuration_form() -> None:
     assert "Self test command" in page
     assert "Republish Discovery" in page
     assert "/homeassistant/rediscover" in page
+
+
+def test_updates_page_contains_check_and_install_actions() -> None:
+    page = render_updates_page(UpdateSnapshot(status="available", update_available=True, current_commit="abc", latest_commit="def"))
+
+    assert "Updates" in page
+    assert "https://git.vns.ae/ahsan/pug" in page
+    assert "Check for Update" in page
+    assert "Download and Install" in page
+    assert "/api/updates/check" in page
+    assert "/api/updates/install" in page
 
 
 def test_logs_page_renders_bounded_tail(tmp_path) -> None:

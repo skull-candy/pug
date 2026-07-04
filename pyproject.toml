@@ -9,7 +9,7 @@ description = "Universal UPS protocol gateway for Raspberry Pi/Linux, initially 
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
-authors = [{ name = "PowerPi UPS Gateway contributors" }]
+authors = [{ name = "Ahsan Muhammad" }]
 dependencies = []
 
 [project.optional-dependencies]

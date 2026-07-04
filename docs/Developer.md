@@ -6,6 +6,8 @@ The collector loop owns backend access and updates `StateStore`. Protocol fronte
 
 Current frontends are SNMP, HTTP JSON, Prometheus metrics, Home Assistant Discovery, a small Web UI, and MQTT publishing.
 
+The public repository is `https://git.vns.ae/ahsan/pug`. The Web UI updater assumes the running checkout has an `origin` remote and performs only fast-forward updates so local code edits are not overwritten.
+
 ## SNMP
 
 The SNMP core is intentionally small and dependency-free. It supports enough BER and PDU handling for v1/v2c GET requests:

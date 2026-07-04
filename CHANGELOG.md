@@ -35,3 +35,7 @@ This project follows the spirit of Keep a Changelog. Update this file for every 
 - Improved the Web UI UPS power-flow diagram with separate desktop/mobile layouts, a left-side bypass path, clearer active/standby styling, and live values on diagram components.
 - Moved Web UI raw backend stats to a dedicated Raw Stats page and tightened UPS Details card spacing.
 - Replaced fragile Web UI text glyphs with packaged transparent PNG UPS icons and changed the top summary from Self Test to Output Voltage.
+- Grouped Web UI administration pages under an Administration menu while keeping Dashboard top-level.
+- Added an app-wide footer with version, copyright, and "Developed By: Ahsan Muhammad".
+- Added a Web UI Updates page that checks the public repository, installs fast-forward updates, reinstalls PUG, and restarts the service.
+- Updated documentation for the public repository at `https://git.vns.ae/ahsan/pug`.

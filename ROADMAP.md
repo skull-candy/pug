@@ -19,3 +19,4 @@
 - Debian packaging.
 - Container image.
 - Published package workflow.
+- Optional signed release/version metadata for the Web UI updater.

@@ -14,9 +14,10 @@ When enabled, the HTTP frontend serves:
 - `/diagnostics`: self-test and battery calibration controls with live command status.
 - `/settings`: configuration form.
 - `/logs`: bounded PUG log and apcupsd event log tail view.
+- `/updates`: update check and install page for the public repository.
 - `/healthz`: health check.
 
-The Web UI at `/ui` is a dashboard with metric cards, a mode-aware animated power-flow diagram, UPS details, and raw backend stats. The dashboard, raw stats page, logs page, and diagnostics page poll small internal endpoints so live UPS data updates without full page reloads. The diagram highlights line/AVR mode when the UPS is online and input/output voltage are close, battery mode when on battery, bypass mode when status reports bypass, and conversion mode when online with a meaningful input/output voltage difference.
+The Web UI at `/ui` is a dashboard with metric cards, a mode-aware animated power-flow diagram, UPS details, and raw backend stats. Dashboard remains the only top-level navigation item; Raw Stats, Diagnostics, Settings, Logs, Updates, and Metrics are grouped under Administration. The dashboard, raw stats page, logs page, and diagnostics page poll small internal endpoints so live UPS data updates without full page reloads. The diagram highlights line/AVR mode when the UPS is online and input/output voltage are close, battery mode when on battery, bypass mode when status reports bypass, and conversion mode when online with a meaningful input/output voltage difference.
 
 The diagnostics page at `/diagnostics` can start one apcupsd diagnostic command at a time without reloading the page. By default it stops `apcupsd`, runs `apctest` with menu selection `2` for self-test or `10` for battery calibration, then starts `apcupsd` again. It shows running/completed/failed status, the latest UPS status values, and captured command output. Monitoring is unavailable while `apcupsd` is stopped. Battery calibration may discharge the UPS for an extended period; configure wrapper commands if the target host needs different service control or sudo.
 
@@ -33,6 +34,8 @@ The settings page at `/settings` includes a configuration form for:
 Saving the form writes `config.yaml`. Restart the service to apply backend, listener, SNMP, and MQTT runtime changes.
 
 The logs page reads only the last configured number of lines from the configured PUG log file and apcupsd events file. It does not load full files into memory. The default apcupsd events path is `/var/log/apcupsd.events`, and it can be changed from Settings.
+
+The updates page checks `https://git.vns.ae/ahsan/pug`, compares the local commit with the fetched upstream commit, and can install a fast-forward-only update. Installation runs `git fetch`, `git merge --ff-only`, reinstalls the package with the current Python, and restarts the `powerpi-ups-gateway` systemd service.
 
 ## MQTT
 

@@ -1,6 +1,8 @@
 # PowerPi UPS Gateway
 
-PowerPi UPS Gateway (PUG) is a universal UPS protocol gateway for Raspberry Pi and Linux. It reads UPS status from one backend, normalizes it into a shared state object, and exposes that state through SNMP.
+PowerPi UPS Gateway (PUG) is a public UPS protocol gateway for Raspberry Pi and Linux. It reads UPS status from one backend, normalizes it into a shared state object, and exposes that state through SNMP.
+
+Public repository: `https://git.vns.ae/ahsan/pug`
 
 The first target client is QNAP. PUG identifies itself as an APC Smart-UPS over SNMP and serves the APC PowerNet OIDs QNAP expects.
 
@@ -53,7 +55,7 @@ On Linux/Raspberry Pi:
 sudo apt update
 sudo apt install -y git python3 python3-venv python3-pip apcupsd
 cd /opt
-sudo git clone <your-repo-url> pug
+sudo git clone https://git.vns.ae/ahsan/pug.git pug
 sudo chown -R "$USER:$USER" /opt/pug
 cd /opt/pug
 python3 -m venv .venv
@@ -81,8 +83,9 @@ HTTP defaults to port `8080`:
 - `http://<host>:8080/diagnostics` self-test and battery calibration controls
 - `http://<host>:8080/settings` configuration
 - `http://<host>:8080/logs` bounded PUG log and apcupsd event log tail view
+- `http://<host>:8080/updates` check, download, and install updates from the public repository
 
-The Web UI is the always-on control plane. The dashboard shows a live mode-aware UPS power-flow diagram, overview cards, UPS details, and raw backend stats without page reloads. The diagram highlights line/AVR, battery, bypass, or conversion path based on UPS status and input/output voltage. Diagnostics live on `/diagnostics`; use that page to start an apcupsd self-test or battery calibration and watch the live command status, latest UPS status, and command output. Settings live on `/settings`; use that page to edit backend, SNMP, API, Prometheus, Home Assistant, MQTT, logging, and diagnostics settings. Save writes `config.yaml`; restart the service to apply backend, listener, SNMP, and MQTT runtime changes. Logs live on `/logs` and tail both the PUG log and apcupsd events file, defaulting to `/var/log/apcupsd.events`. Both views update without page reloads and only read the configured number of lines, so huge log files do not slow the UI.
+The Web UI is the always-on control plane. The header keeps Dashboard top-level and groups Raw Stats, Diagnostics, Settings, Logs, Updates, and Metrics under Administration. The dashboard shows a live mode-aware UPS power-flow diagram, overview cards, UPS details, and raw backend stats without page reloads. The diagram highlights line/AVR, battery, bypass, or conversion path based on UPS status and input/output voltage. Diagnostics live on `/diagnostics`; use that page to start an apcupsd self-test or battery calibration and watch the live command status, latest UPS status, and command output. Settings live on `/settings`; use that page to edit backend, SNMP, API, Prometheus, Home Assistant, MQTT, logging, and diagnostics settings. Save writes `config.yaml`; restart the service to apply backend, listener, SNMP, and MQTT runtime changes. Updates live on `/updates`; use that page to check the public repository, fast-forward the local checkout, reinstall PUG, and restart the systemd service. Logs live on `/logs` and tail both the PUG log and apcupsd events file, defaulting to `/var/log/apcupsd.events`. Both views update without page reloads and only read the configured number of lines, so huge log files do not slow the UI.
 
 Diagnostics stop `apcupsd`, run `apctest`, then start `apcupsd` again by default. They use `apctest` menu selection `2` for self-test and `10` for battery calibration. Monitoring is unavailable while `apcupsd` is stopped, and battery calibration can run for a long time while intentionally discharging the UPS battery. Adjust the configured diagnostics commands if your host needs a wrapper script for service control or sudo.
 

@@ -5,6 +5,7 @@ This file tracks known follow-up work. Update it with every codebase change, eve
 ## Active
 
 - Make saved Web UI settings apply live without a service restart where practical.
+- Add optional authentication before exposing Web UI administration and update actions beyond a trusted LAN.
 
 ## Done
 
@@ -35,3 +36,4 @@ This file tracks known follow-up work. Update it with every codebase change, eve
 - Replaced fragile Web UI text glyphs with packaged transparent PNG UPS icons and changed the top summary from Self Test to Output Voltage.
 - Added project docs, config example, systemd service, and tests.
 - Added maintenance rule for `CHANGELOG.md` and `TODO.md`.
+- Published repo references, Administration navigation, app footer, and Web UI update workflow.

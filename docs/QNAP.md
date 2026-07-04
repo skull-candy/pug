@@ -1,5 +1,7 @@
 # QNAP SNMP Notes
 
+Project repository: `https://git.vns.ae/ahsan/pug`
+
 QNAP SNMP UPS mode probes `sysObjectID` first:
 
 - Request: `1.3.6.1.2.1.1.2.0`

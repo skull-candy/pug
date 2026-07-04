@@ -1,5 +1,7 @@
 # APC PowerNet Mapping
 
+Project repository: `https://git.vns.ae/ahsan/pug`
+
 PUG exposes a safe read-only subset of APC PowerNet OIDs. It does not implement shutdown or control/write OIDs.
 
 | OID | Name | Source |
