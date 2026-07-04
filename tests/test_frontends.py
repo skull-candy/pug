@@ -158,17 +158,24 @@ def test_settings_page_contains_configuration_form() -> None:
     assert "Settings" in page
     assert 'action="/config"' in page
     assert "Log file path" in page
+    assert "apcupsd events path" in page
 
 
 def test_logs_page_renders_bounded_tail(tmp_path) -> None:
     log_path = tmp_path / "pug.log"
+    events_path = tmp_path / "apcupsd.events"
     log_path.write_text("".join(f"line {index}\n" for index in range(20)), encoding="utf-8")
-    config = AppConfig(logging=LoggingConfig(file_path=str(log_path), web_tail_lines=5))
+    events_path.write_text("".join(f"event {index}\n" for index in range(10)), encoding="utf-8")
+    config = AppConfig(logging=LoggingConfig(file_path=str(log_path), apcupsd_events_path=str(events_path), web_tail_lines=5))
     lines = tail_log_lines(str(log_path), 5)
-    page = render_logs_page(config, lines)
+    event_lines = tail_log_lines(str(events_path), 5)
+    page = render_logs_page(config, lines, event_lines)
 
     assert lines == [f"line {index}" for index in range(15, 20)]
+    assert event_lines == [f"event {index}" for index in range(5, 10)]
     assert "line 19" in page
+    assert "event 9" in page
+    assert "apcupsd Events" in page
     assert "line 1\n" not in page
 
 
@@ -211,6 +218,7 @@ def test_config_form_can_disable_methods() -> None:
             "mqtt_publish_interval_seconds": ["30"],
             "logging_level": ["INFO"],
             "logging_file_path": ["/var/log/pug/pug.log"],
+            "logging_apcupsd_events_path": ["/var/log/apcupsd.events"],
             "logging_web_tail_lines": ["300"],
         }
     )

@@ -32,4 +32,5 @@ mqtt:
 logging:
   level: INFO
   file_path: "/var/log/pug/pug.log"
+  apcupsd_events_path: "/var/log/apcupsd.events"
   web_tail_lines: 300

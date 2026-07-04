@@ -12,6 +12,7 @@ def test_load_config_reads_project_example() -> None:
     assert config.snmp.developer_log is True
     assert config.http.port == 8080
     assert config.mqtt.enabled is False
+    assert config.logging.apcupsd_events_path == "/var/log/apcupsd.events"
 
 
 def test_config_rejects_invalid_snmp_port() -> None:

@@ -87,7 +87,11 @@ class HttpFrontend:
                     self._send(
                         200,
                         "text/html; charset=utf-8",
-                        render_logs_page(config, tail_log_lines(config.logging.file_path, config.logging.web_tail_lines)).encode(),
+                        render_logs_page(
+                            config,
+                            tail_log_lines(config.logging.file_path, config.logging.web_tail_lines),
+                            tail_log_lines(config.logging.apcupsd_events_path, config.logging.web_tail_lines),
+                        ).encode(),
                     )
                 elif self.path == "/raw":
                     self._send(
@@ -218,6 +222,7 @@ def config_from_form(form: dict[str, list[str]]) -> AppConfig:
         logging=LoggingConfig(
             level=_field(form, "logging_level"),
             file_path=_field(form, "logging_file_path"),
+            apcupsd_events_path=_field(form, "logging_apcupsd_events_path"),
             web_tail_lines=int(_field(form, "logging_web_tail_lines")),
         ),
     )
@@ -261,6 +266,7 @@ def config_to_public_dict(config: AppConfig) -> dict[str, Any]:
         "logging": {
             "level": config.logging.level,
             "file_path": config.logging.file_path,
+            "apcupsd_events_path": config.logging.apcupsd_events_path,
             "web_tail_lines": config.logging.web_tail_lines,
         },
     }
@@ -739,8 +745,9 @@ def render_settings_page(config: AppConfig) -> str:
     )
 
 
-def render_logs_page(config: AppConfig, lines: list[str]) -> str:
+def render_logs_page(config: AppConfig, lines: list[str], apcupsd_event_lines: list[str] | None = None) -> str:
     log_lines = "\n".join(_escape(line.rstrip("\n")) for line in lines)
+    apcupsd_lines = "\n".join(_escape(line.rstrip("\n")) for line in (apcupsd_event_lines or []))
     return page_shell(
         "Logs",
         "logs",
@@ -754,6 +761,15 @@ def render_logs_page(config: AppConfig, lines: list[str]) -> str:
             <a class="button secondary" href="/logs">Refresh</a>
           </div>
           <pre class="log-view">{log_lines or 'No log lines available.'}</pre>
+        </section>
+        <section>
+          <div class="section-head">
+            <div>
+              <h2>apcupsd Events</h2>
+              <p class="muted">Showing the last {config.logging.web_tail_lines} lines from {_escape(config.logging.apcupsd_events_path)}.</p>
+            </div>
+          </div>
+          <pre class="log-view">{apcupsd_lines or 'No apcupsd event lines available.'}</pre>
         </section>
         """,
     )
@@ -944,6 +960,7 @@ def render_config_form(config: AppConfig) -> str:
         </select>
       </label>
       <label>Log file path <input name="logging_file_path" value="{_escape(config.logging.file_path)}"></label>
+      <label>apcupsd events path <input name="logging_apcupsd_events_path" value="{_escape(config.logging.apcupsd_events_path)}"></label>
       <label>Web log tail lines <input name="logging_web_tail_lines" type="number" min="1" value="{config.logging.web_tail_lines}"></label>
     </div>
   </fieldset>

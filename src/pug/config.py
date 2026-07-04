@@ -53,6 +53,7 @@ class MqttConfig:
 class LoggingConfig:
     level: str = "INFO"
     file_path: str = "/var/log/pug/pug.log"
+    apcupsd_events_path: str = "/var/log/apcupsd.events"
     web_tail_lines: int = 300
 
 
@@ -118,6 +119,7 @@ def config_from_mapping(data: dict[str, Any]) -> AppConfig:
         logging=LoggingConfig(
             level=str(logging.get("level", "INFO")),
             file_path=str(logging.get("file_path", "/var/log/pug/pug.log")),
+            apcupsd_events_path=str(logging.get("apcupsd_events_path", "/var/log/apcupsd.events")),
             web_tail_lines=int(logging.get("web_tail_lines", 300)),
         ),
     )

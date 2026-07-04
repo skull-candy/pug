@@ -12,7 +12,7 @@ When enabled, the HTTP frontend serves:
 - `/homeassistant`: Home Assistant MQTT discovery config payloads as JSON.
 - `/ui` and `/`: small status page.
 - `/settings`: configuration form.
-- `/logs`: bounded log tail view.
+- `/logs`: bounded PUG log and apcupsd event log tail view.
 - `/healthz`: health check.
 
 The Web UI at `/ui` is a dashboard with metric cards, a mode-aware animated power-flow diagram, UPS details, and raw backend stats. The diagram highlights line/AVR mode when the UPS is online and input/output voltage are close, battery mode when on battery, bypass mode when status reports bypass, and conversion mode when online with a meaningful input/output voltage difference.
@@ -28,7 +28,7 @@ The settings page at `/settings` includes a configuration form for:
 
 Saving the form writes `config.yaml`. Restart the service to apply backend, listener, SNMP, and MQTT runtime changes.
 
-The logs page reads only the last configured number of lines from the configured log file. It does not load the full file into memory.
+The logs page reads only the last configured number of lines from the configured PUG log file and apcupsd events file. It does not load full files into memory. The default apcupsd events path is `/var/log/apcupsd.events`, and it can be changed from Settings.
 
 ## MQTT
 
