@@ -6,7 +6,7 @@ from datetime import datetime
 from importlib.resources import files
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from threading import Event
+from threading import Event, Thread
 from typing import Any
 from urllib.parse import parse_qs
 
@@ -58,6 +58,13 @@ class HttpFrontend:
         handler = self._handler()
         server = ThreadingHTTPServer((self.listen, self.port), handler)
         server.timeout = 1
+        update_thread = Thread(
+            target=self.updater.run_background_checks,
+            args=(stop,),
+            name="update-checker",
+            daemon=True,
+        )
+        update_thread.start()
         LOGGER.info("HTTP frontend listening on %s:%s", self.listen, self.port)
         try:
             while not stop.is_set():
@@ -516,6 +523,9 @@ def page_shell(title: str, active: str, content: str, auto_refresh: bool = False
     * {{ box-sizing: border-box; }}
     body {{ font: 15px/1.45 system-ui, -apple-system, Segoe UI, sans-serif; margin: 0; color: var(--ink); background: var(--bg); }}
     .topbar {{ position: sticky; top: 0; z-index: 5; display:flex; align-items:center; justify-content:space-between; gap:16px; padding: 12px 24px; border-bottom:1px solid var(--line); background: rgba(255,255,255,.94); backdrop-filter: blur(10px); }}
+    .update-banner {{ display:none; align-items:center; justify-content:space-between; gap:12px; padding:10px 24px; background:#fff7ed; border-bottom:1px solid #fed7aa; color:#9a3412; font-weight:700; }}
+    .update-banner.show {{ display:flex; }}
+    .update-banner a {{ color:#9a3412; }}
     .brand {{ font-weight: 800; color: var(--blue); text-decoration:none; }}
     nav {{ display:flex; gap:8px; flex-wrap:wrap; }}
     nav a, .button, .admin-button {{ display:inline-flex; align-items:center; justify-content:center; min-height:36px; padding:8px 12px; border-radius:7px; text-decoration:none; color:var(--ink); border:1px solid transparent; background:transparent; }}
@@ -581,8 +591,8 @@ def page_shell(title: str, active: str, content: str, auto_refresh: bool = False
     .detail-item {{ border:1px solid #edf1f5; border-radius:8px; padding:8px 10px; background:#fbfcfe; min-height:58px; }}
     .detail-item dt {{ color:var(--muted); font-size:12px; line-height:1.25; }}
     .detail-item dd {{ margin:3px 0 0; font-weight:700; line-height:1.25; overflow-wrap:anywhere; }}
-    .compact-details {{ grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 5px; }}
-    .compact-details .detail-item {{ min-height:0; padding:5px 7px; border-radius:6px; }}
+    .compact-details {{ grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 0; }}
+    .compact-details .detail-item {{ min-height:0; padding:3px 6px; border-radius:0; }}
     .compact-details .detail-item dt {{ font-size:11px; line-height:1.15; }}
     .compact-details .detail-item dd {{ margin-top:1px; font-size:13px; line-height:1.15; font-weight:700; }}
     table {{ border-collapse: collapse; width: 100%; }}
@@ -613,7 +623,7 @@ def page_shell(title: str, active: str, content: str, auto_refresh: bool = False
     .danger {{ background:var(--bad); color:#fff; }}
     @keyframes dash {{ to {{ stroke-dashoffset: -32; }} }}
     @media (max-width: 980px) {{ .cards {{ grid-template-columns: repeat(3, minmax(130px, 1fr)); }} }}
-    @media (max-width: 700px) {{ main {{ padding:12px; }} section, .hero-panel {{ padding:14px; }} .cards {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }} .topbar {{ align-items:flex-start; flex-direction:column; }} .admin-panel {{ left:0; right:auto; }} .footer {{ align-items:flex-start; flex-direction:column; }} svg.power.desktop {{ display:none; }} svg.power.mobile {{ display:block; }} .diagram-card {{ padding:8px; }} }}
+    @media (max-width: 700px) {{ main {{ padding:12px; }} section, .hero-panel {{ padding:14px; }} .cards {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }} .topbar {{ align-items:flex-start; flex-direction:column; }} .update-banner {{ align-items:flex-start; flex-direction:column; }} .admin-panel {{ left:0; right:auto; }} .footer {{ align-items:flex-start; flex-direction:column; }} svg.power.desktop {{ display:none; }} svg.power.mobile {{ display:block; }} .diagram-card {{ padding:8px; }} }}
   </style>
 </head>
 <body>
@@ -634,11 +644,30 @@ def page_shell(title: str, active: str, content: str, auto_refresh: bool = False
       </div>
     </nav>
   </header>
+  <div id="update-banner" class="update-banner">
+    <span>New PUG version available.</span>
+    <a href="/updates">Open Updates</a>
+  </div>
   <main>{content}</main>
   <footer class="footer">
     <span>Copyright &copy; {datetime.now().year} PowerPi UPS Gateway. Developed By: Ahsan Muhammad</span>
     <span>Version {__version__}</span>
   </footer>
+  <script>
+  (() => {{
+    const banner = document.getElementById("update-banner");
+    const refreshUpdateBanner = async () => {{
+      try {{
+        const response = await fetch("/api/updates", {{ cache: "no-store" }});
+        if (!response.ok) return;
+        const payload = await response.json();
+        banner.classList.toggle("show", Boolean(payload.update_available));
+      }} catch (error) {{}}
+    }};
+    refreshUpdateBanner();
+    setInterval(refreshUpdateBanner, 60000);
+  }})();
+  </script>
 </body>
 </html>
 """

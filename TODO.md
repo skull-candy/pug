@@ -37,3 +37,4 @@ This file tracks known follow-up work. Update it with every codebase change, eve
 - Added project docs, config example, systemd service, and tests.
 - Added maintenance rule for `CHANGELOG.md` and `TODO.md`.
 - Published repo references, Administration navigation, app footer, and Web UI update workflow.
+- Added version bump rule, background update checks, and top-of-page update banner.

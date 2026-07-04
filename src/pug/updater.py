@@ -49,6 +49,15 @@ class UpdateManager:
         self._lock = threading.Lock()
         self._snapshot = UpdateSnapshot(remote=PUBLIC_REPO_URL)
 
+    def run_background_checks(self, stop: threading.Event, interval_seconds: int = 3600, initial_delay_seconds: int = 15) -> None:
+        if stop.wait(initial_delay_seconds):
+            return
+        while not stop.is_set():
+            snapshot = self.snapshot()
+            if snapshot.status != "installing":
+                self.check()
+            stop.wait(interval_seconds)
+
     def snapshot(self) -> UpdateSnapshot:
         with self._lock:
             return UpdateSnapshot(

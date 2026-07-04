@@ -126,7 +126,8 @@ def test_dashboard_has_modern_sections_and_no_settings_form() -> None:
     assert '<meta http-equiv="refresh" content="30">' not in page
     assert "Administration" in page
     assert "Developed By: Ahsan Muhammad" in page
-    assert "Version 0.1.0" in page
+    assert "Version 0.1.1" in page
+    assert "New PUG version available." in page
     assert "Line / AVR path active" in page
     assert "Line / AVR" in page
     assert "Bypass Path" in page
@@ -136,6 +137,7 @@ def test_dashboard_has_modern_sections_and_no_settings_form() -> None:
     assert "Input Voltage" in page
     assert "Output Voltage" in page
     assert "compact-details" in page
+    assert "gap: 0" in page
     assert "Self Test" not in page
     assert "/assets/ups-icons/input.png" in page
     assert "/assets/ups-icons/avr.png" in page

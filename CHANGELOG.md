@@ -39,3 +39,5 @@ This project follows the spirit of Keep a Changelog. Update this file for every 
 - Added an app-wide footer with version, copyright, and "Developed By: Ahsan Muhammad".
 - Added a Web UI Updates page that checks the public repository, installs fast-forward updates, reinstalls PUG, and restarts the service.
 - Updated documentation for the public repository at `https://git.vns.ae/ahsan/pug`.
+- Added background update checks with a top-of-page banner when a newer version is available.
+- Tightened dashboard UPS Details row spacing and bumped the application version to `0.1.1`.

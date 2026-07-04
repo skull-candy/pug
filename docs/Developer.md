@@ -38,3 +38,4 @@ Handlers must be read-only.
 ## Maintenance
 
 Keep `CHANGELOG.md` and `TODO.md` current with every codebase update.
+Increment the version in `pyproject.toml` and `src/pug/__init__.py` with every codebase change.

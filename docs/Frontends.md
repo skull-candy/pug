@@ -35,7 +35,7 @@ Saving the form writes `config.yaml`. Restart the service to apply backend, list
 
 The logs page reads only the last configured number of lines from the configured PUG log file and apcupsd events file. It does not load full files into memory. The default apcupsd events path is `/var/log/apcupsd.events`, and it can be changed from Settings.
 
-The updates page checks `https://git.vns.ae/ahsan/pug`, compares the local commit with the fetched upstream commit, and can install a fast-forward-only update. Installation runs `git fetch`, `git merge --ff-only`, reinstalls the package with the current Python, and restarts the `powerpi-ups-gateway` systemd service.
+PUG checks for updates in the background and shows a top-of-page banner when a newer upstream commit is available. The updates page checks `https://git.vns.ae/ahsan/pug`, compares the local commit with the fetched upstream commit, and can install a fast-forward-only update. Installation runs `git fetch`, `git merge --ff-only`, reinstalls the package with the current Python, and restarts the `powerpi-ups-gateway` systemd service.
 
 ## MQTT
 
