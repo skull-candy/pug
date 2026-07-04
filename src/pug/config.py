@@ -58,12 +58,22 @@ class LoggingConfig:
 
 
 @dataclass(frozen=True)
+class DiagnosticsConfig:
+    self_test_command: list[str] = field(default_factory=lambda: ["apctest"])
+    self_test_selection: str = "2"
+    battery_calibration_command: list[str] = field(default_factory=lambda: ["apctest"])
+    battery_calibration_selection: str = "10"
+    command_timeout_seconds: int = 21600
+
+
+@dataclass(frozen=True)
 class AppConfig:
     backend: BackendConfig = field(default_factory=BackendConfig)
     snmp: SnmpConfig = field(default_factory=SnmpConfig)
     http: HttpConfig = field(default_factory=HttpConfig)
     mqtt: MqttConfig = field(default_factory=MqttConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
+    diagnostics: DiagnosticsConfig = field(default_factory=DiagnosticsConfig)
 
 
 def load_config(path: str | Path | None) -> AppConfig:
@@ -84,6 +94,7 @@ def config_from_mapping(data: dict[str, Any]) -> AppConfig:
     http = data.get("http", {})
     mqtt = data.get("mqtt", {})
     logging = data.get("logging", {})
+    diagnostics = data.get("diagnostics", {})
     return AppConfig(
         backend=BackendConfig(
             type=str(backend.get("type", "apcupsd")),
@@ -121,6 +132,13 @@ def config_from_mapping(data: dict[str, Any]) -> AppConfig:
             file_path=str(logging.get("file_path", "/var/log/pug/pug.log")),
             apcupsd_events_path=str(logging.get("apcupsd_events_path", "/var/log/apcupsd.events")),
             web_tail_lines=int(logging.get("web_tail_lines", 300)),
+        ),
+        diagnostics=DiagnosticsConfig(
+            self_test_command=list(diagnostics.get("self_test_command", ["apctest"])),
+            self_test_selection=str(diagnostics.get("self_test_selection", "2")),
+            battery_calibration_command=list(diagnostics.get("battery_calibration_command", ["apctest"])),
+            battery_calibration_selection=str(diagnostics.get("battery_calibration_selection", "10")),
+            command_timeout_seconds=int(diagnostics.get("command_timeout_seconds", 21600)),
         ),
     )
 
@@ -160,6 +178,16 @@ def validate_config(config: AppConfig) -> None:
         raise ConfigError("mqtt.publish_interval_seconds must be greater than zero")
     if config.logging.web_tail_lines <= 0:
         raise ConfigError("logging.web_tail_lines must be greater than zero")
+    if not config.diagnostics.self_test_command:
+        raise ConfigError("diagnostics.self_test_command must not be empty")
+    if not config.diagnostics.self_test_selection:
+        raise ConfigError("diagnostics.self_test_selection must not be empty")
+    if not config.diagnostics.battery_calibration_command:
+        raise ConfigError("diagnostics.battery_calibration_command must not be empty")
+    if not config.diagnostics.battery_calibration_selection:
+        raise ConfigError("diagnostics.battery_calibration_selection must not be empty")
+    if config.diagnostics.command_timeout_seconds <= 0:
+        raise ConfigError("diagnostics.command_timeout_seconds must be greater than zero")
 
 
 def _parse_simple_yaml(text: str) -> dict[str, Any]:

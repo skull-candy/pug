@@ -13,6 +13,7 @@ from pug.config import (
     AppConfig,
     BackendConfig,
     ConfigError,
+    DiagnosticsConfig,
     HttpConfig,
     LoggingConfig,
     MqttConfig,
@@ -23,6 +24,7 @@ from pug.config import (
     save_config,
     validate_config,
 )
+from pug.diagnostics import DiagnosticManager, DiagnosticSnapshot, diagnostic_label
 from pug.frontends.homeassistant import discovery_payloads
 from pug.frontends.prometheus import render_metrics
 from pug.raw_stats import state_payload
@@ -45,6 +47,7 @@ class HttpFrontend:
         self.config = config
         self.listen = listen
         self.port = port
+        self.diagnostics = DiagnosticManager()
 
     def serve_forever(self, stop: Event) -> None:
         handler = self._handler()
@@ -93,6 +96,12 @@ class HttpFrontend:
                             tail_log_lines(config.logging.apcupsd_events_path, config.logging.web_tail_lines),
                         ).encode(),
                     )
+                elif self.path == "/diagnostics":
+                    self._send(
+                        200,
+                        "text/html; charset=utf-8",
+                        render_diagnostics_page(state.to_dict(), config, frontend.diagnostics.snapshot()).encode(),
+                    )
                 elif self.path == "/raw":
                     self._send(
                         200,
@@ -136,6 +145,22 @@ class HttpFrontend:
                     self._send_json({"error": "not found"}, status=404)
 
             def do_POST(self) -> None:
+                if self.path == "/diagnostics":
+                    length = int(self.headers.get("Content-Length", "0"))
+                    body = self.rfile.read(length).decode("utf-8")
+                    form = parse_qs(body, keep_blank_values=True)
+                    config = frontend.current_config()
+                    try:
+                        started = frontend.diagnostics.start(_field(form, "action"), config.diagnostics)
+                        message = "Diagnostic started." if started else "Another diagnostic is already running."
+                    except ValueError as exc:
+                        message = str(exc)
+                    self._send(
+                        200,
+                        "text/html; charset=utf-8",
+                        render_message_page("Diagnostics", message, config, back_href="/diagnostics").encode(),
+                    )
+                    return
                 if self.path != "/config":
                     self._send_json({"error": "not found"}, status=404)
                     return
@@ -225,6 +250,13 @@ def config_from_form(form: dict[str, list[str]]) -> AppConfig:
             apcupsd_events_path=_field(form, "logging_apcupsd_events_path"),
             web_tail_lines=int(_field(form, "logging_web_tail_lines")),
         ),
+        diagnostics=DiagnosticsConfig(
+            self_test_command=parse_command(_field(form, "diagnostics_self_test_command")),
+            self_test_selection=_field(form, "diagnostics_self_test_selection"),
+            battery_calibration_command=parse_command(_field(form, "diagnostics_battery_calibration_command")),
+            battery_calibration_selection=_field(form, "diagnostics_battery_calibration_selection"),
+            command_timeout_seconds=int(_field(form, "diagnostics_command_timeout_seconds")),
+        ),
     )
     validate_config(config)
     return config
@@ -268,6 +300,13 @@ def config_to_public_dict(config: AppConfig) -> dict[str, Any]:
             "file_path": config.logging.file_path,
             "apcupsd_events_path": config.logging.apcupsd_events_path,
             "web_tail_lines": config.logging.web_tail_lines,
+        },
+        "diagnostics": {
+            "self_test_command": config.diagnostics.self_test_command,
+            "self_test_selection": config.diagnostics.self_test_selection,
+            "battery_calibration_command": config.diagnostics.battery_calibration_command,
+            "battery_calibration_selection": config.diagnostics.battery_calibration_selection,
+            "command_timeout_seconds": config.diagnostics.command_timeout_seconds,
         },
     }
 
@@ -430,6 +469,9 @@ def page_shell(title: str, active: str, content: str) -> str:
     .hint {{ color: var(--muted); font-size: 14px; }}
     .text-link {{ color:var(--blue); text-decoration:none; font-weight:700; }}
     .log-view {{ max-height: 68vh; overflow:auto; padding:14px; background:#0b1220; color:#d8e2f1; border-radius:8px; font: 13px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace; white-space:pre-wrap; }}
+    .actions {{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; }}
+    .diagnostic-status {{ display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:8px; margin:12px 0; }}
+    .danger {{ background:var(--bad); color:#fff; }}
     @keyframes dash {{ to {{ stroke-dashoffset: -32; }} }}
     @media (max-width: 980px) {{ .cards {{ grid-template-columns: repeat(3, minmax(130px, 1fr)); }} }}
     @media (max-width: 700px) {{ main {{ padding:12px; }} section, .hero-panel {{ padding:14px; }} .cards {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }} .topbar {{ align-items:flex-start; flex-direction:column; }} svg.power.desktop {{ display:none; }} svg.power.mobile {{ display:block; }} .diagram-card {{ padding:8px; }} }}
@@ -441,6 +483,7 @@ def page_shell(title: str, active: str, content: str) -> str:
     <nav>
       <a class="{_active(active, 'dashboard')}" href="/ui">Dashboard</a>
       <a class="{_active(active, 'raw')}" href="/raw">Raw Stats</a>
+      <a class="{_active(active, 'diagnostics')}" href="/diagnostics">Diagnostics</a>
       <a class="{_active(active, 'settings')}" href="/settings">Settings</a>
       <a class="{_active(active, 'logs')}" href="/logs">Logs</a>
       <a href="/metrics">Metrics</a>
@@ -775,6 +818,63 @@ def render_logs_page(config: AppConfig, lines: list[str], apcupsd_event_lines: l
     )
 
 
+def render_diagnostics_page(state: dict[str, Any], config: AppConfig, diagnostic: DiagnosticSnapshot) -> str:
+    output = "\n".join(_escape(line.rstrip("\n")) for line in diagnostic.output)
+    action = diagnostic_label(diagnostic.action) if diagnostic.action else "-"
+    started = display_value("last_update", diagnostic.started_at.isoformat() if diagnostic.started_at else "")
+    finished = display_value("last_update", diagnostic.finished_at.isoformat() if diagnostic.finished_at else "")
+    return_code = "-" if diagnostic.return_code is None else str(diagnostic.return_code)
+    busy = diagnostic.status == "running"
+    return page_shell(
+        "Diagnostics",
+        "diagnostics",
+        f"""
+        <section>
+          <div class="section-head">
+            <div>
+              <h1>Diagnostics</h1>
+              <p class="muted">Live UPS state and apcupsd diagnostic actions.</p>
+            </div>
+            <span class="health {'warn' if busy else 'ok'}">{_escape(diagnostic.status.title())}</span>
+          </div>
+          <div class="diagnostic-status">
+            <dl class="detail-item"><dt>UPS Status</dt><dd>{_escape(display_value("status_text", state.get("status_text", "-")))}</dd></dl>
+            <dl class="detail-item"><dt>Battery Charge</dt><dd>{_escape(display_value("battery_charge_percent", state.get("battery_charge_percent")))}</dd></dl>
+            <dl class="detail-item"><dt>Runtime Remaining</dt><dd>{_escape(display_value("runtime_minutes", state.get("runtime_minutes")))}</dd></dl>
+            <dl class="detail-item"><dt>Self Test Result</dt><dd>{_escape(str(state.get("raw", {}).get("SELFTEST", "-")))}</dd></dl>
+          </div>
+          <div class="actions">
+            <form method="post" action="/diagnostics">
+              <input type="hidden" name="action" value="self_test">
+              <button type="submit"{' disabled' if busy else ''}>Start Self Test</button>
+            </form>
+            <form method="post" action="/diagnostics">
+              <input type="hidden" name="action" value="battery_calibration">
+              <button class="danger" type="submit"{' disabled' if busy else ''}>Start Battery Calibration</button>
+            </form>
+          </div>
+        </section>
+        <section>
+          <div class="section-head">
+            <div>
+              <h2>Test Status</h2>
+              <p class="muted">Refreshes automatically with the rest of the Web UI.</p>
+            </div>
+            <a class="button secondary" href="/diagnostics">Refresh</a>
+          </div>
+          <div class="diagnostic-status">
+            <dl class="detail-item"><dt>Action</dt><dd>{_escape(action)}</dd></dl>
+            <dl class="detail-item"><dt>Started</dt><dd>{_escape(started)}</dd></dl>
+            <dl class="detail-item"><dt>Finished</dt><dd>{_escape(finished)}</dd></dl>
+            <dl class="detail-item"><dt>Return Code</dt><dd>{_escape(return_code)}</dd></dl>
+          </div>
+          {'<p class="muted">' + _escape(diagnostic.error) + '</p>' if diagnostic.error else ''}
+          <pre class="log-view">{output or 'No diagnostic output yet.'}</pre>
+        </section>
+        """,
+    )
+
+
 DISPLAY_LABELS = {
     "manufacturer": "Manufacturer",
     "model": "Model",
@@ -965,11 +1065,22 @@ def render_config_form(config: AppConfig) -> str:
     </div>
   </fieldset>
 
+  <fieldset>
+    <legend>Diagnostics</legend>
+    <div class="grid">
+      <label>Self test command <input name="diagnostics_self_test_command" value="{_escape(format_command(config.diagnostics.self_test_command))}"></label>
+      <label>Self test menu selection <input name="diagnostics_self_test_selection" value="{_escape(config.diagnostics.self_test_selection)}"></label>
+      <label>Battery calibration command <input name="diagnostics_battery_calibration_command" value="{_escape(format_command(config.diagnostics.battery_calibration_command))}"></label>
+      <label>Battery calibration menu selection <input name="diagnostics_battery_calibration_selection" value="{_escape(config.diagnostics.battery_calibration_selection)}"></label>
+      <label>Command timeout seconds <input name="diagnostics_command_timeout_seconds" type="number" min="1" value="{config.diagnostics.command_timeout_seconds}"></label>
+    </div>
+  </fieldset>
+
   <button type="submit">Save Configuration</button>
 </form>"""
 
 
-def render_message_page(title: str, message: str, config: AppConfig) -> str:
+def render_message_page(title: str, message: str, config: AppConfig, back_href: str = "/ui") -> str:
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -981,7 +1092,7 @@ def render_message_page(title: str, message: str, config: AppConfig) -> str:
 <body>
   <h1>{_escape(title)}</h1>
   <p>{_escape(message)}</p>
-  <p><a href="/ui">Back to Web UI</a></p>
+  <p><a href="{_escape(back_href)}">Back to Web UI</a></p>
 </body>
 </html>
 """

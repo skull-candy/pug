@@ -1,5 +1,6 @@
 from pug.collector.simulator import simulator_state
 from pug.config import AppConfig, LoggingConfig, load_config, save_config
+from pug.diagnostics import DiagnosticSnapshot
 from pug.frontends.homeassistant import discovery_payloads
 from pug.frontends.http import (
     config_from_form,
@@ -9,6 +10,7 @@ from pug.frontends.http import (
     raw_display_label,
     read_ups_icon,
     render_control_page,
+    render_diagnostics_page,
     render_logs_page,
     render_raw_stats_page,
     render_settings_page,
@@ -159,6 +161,7 @@ def test_settings_page_contains_configuration_form() -> None:
     assert 'action="/config"' in page
     assert "Log file path" in page
     assert "apcupsd events path" in page
+    assert "Self test command" in page
 
 
 def test_logs_page_renders_bounded_tail(tmp_path) -> None:
@@ -177,6 +180,20 @@ def test_logs_page_renders_bounded_tail(tmp_path) -> None:
     assert "event 9" in page
     assert "apcupsd Events" in page
     assert "line 1\n" not in page
+
+
+def test_diagnostics_page_shows_actions_live_status_and_result() -> None:
+    state = simulator_state().updated(raw={"SELFTEST": "PASSED"}).to_dict()
+    snapshot = DiagnosticSnapshot(status="completed", action="self_test", return_code=0, output=["TEST PASSED"])
+
+    page = render_diagnostics_page(state, AppConfig(), snapshot)
+
+    assert "Diagnostics" in page
+    assert 'name="action" value="self_test"' in page
+    assert 'name="action" value="battery_calibration"' in page
+    assert "Self Test Result" in page
+    assert "PASSED" in page
+    assert "TEST PASSED" in page
 
 
 def test_display_helpers_are_human_friendly() -> None:
@@ -220,6 +237,11 @@ def test_config_form_can_disable_methods() -> None:
             "logging_file_path": ["/var/log/pug/pug.log"],
             "logging_apcupsd_events_path": ["/var/log/apcupsd.events"],
             "logging_web_tail_lines": ["300"],
+            "diagnostics_self_test_command": ["apctest"],
+            "diagnostics_self_test_selection": ["2"],
+            "diagnostics_battery_calibration_command": ["apctest"],
+            "diagnostics_battery_calibration_selection": ["10"],
+            "diagnostics_command_timeout_seconds": ["21600"],
         }
     )
 
@@ -228,6 +250,7 @@ def test_config_form_can_disable_methods() -> None:
     assert config.http.prometheus_enabled is False
     assert config.http.homeassistant_enabled is False
     assert config.mqtt.enabled is False
+    assert config.diagnostics.self_test_selection == "2"
 
 
 def test_config_save_round_trip(tmp_path) -> None:

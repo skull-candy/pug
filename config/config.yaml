@@ -34,3 +34,10 @@ logging:
   file_path: "/var/log/pug/pug.log"
   apcupsd_events_path: "/var/log/apcupsd.events"
   web_tail_lines: 300
+
+diagnostics:
+  self_test_command: ["apctest"]
+  self_test_selection: "2"
+  battery_calibration_command: ["apctest"]
+  battery_calibration_selection: "10"
+  command_timeout_seconds: 21600
