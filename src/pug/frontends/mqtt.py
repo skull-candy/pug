@@ -33,7 +33,10 @@ class MqttPublisher:
 
 def publish_state(config: MqttConfig, state: UPSState) -> None:
     messages = mqtt_messages(config, state)
+    publish_messages(config, messages)
 
+
+def publish_messages(config: MqttConfig, messages: list[tuple[str, str, bool]]) -> None:
     with socket.create_connection((config.host, config.port), timeout=10) as sock:
         _send_connect(sock, config)
         for topic, body, retain in messages:
@@ -57,6 +60,12 @@ def mqtt_messages(config: MqttConfig, state: UPSState) -> list[tuple[str, str, b
     messages.append((f"{config.topic_prefix}/raw", json.dumps(state.raw, sort_keys=True), False))
     for stat in raw_stats(state):
         messages.append((f"{config.topic_prefix}/raw/{stat.slug}", stat.value, False))
+    messages.extend(homeassistant_discovery_messages(config, state))
+    return messages
+
+
+def homeassistant_discovery_messages(config: MqttConfig, state: UPSState) -> list[tuple[str, str, bool]]:
+    messages: list[tuple[str, str, bool]] = []
     for topic, discovery_payload in discovery_payloads(
         state,
         config.topic_prefix,
@@ -64,6 +73,16 @@ def mqtt_messages(config: MqttConfig, state: UPSState) -> list[tuple[str, str, b
     ).items():
         messages.append((topic, json.dumps(discovery_payload, sort_keys=True), True))
     return messages
+
+
+def rediscovery_messages(config: MqttConfig, state: UPSState) -> list[tuple[str, str, bool]]:
+    discovery = homeassistant_discovery_messages(config, state)
+    clear = [(topic, "", True) for topic, _body, _retain in discovery]
+    return [*clear, *mqtt_messages(config, state)]
+
+
+def publish_homeassistant_rediscovery(config: MqttConfig, state: UPSState) -> None:
+    publish_messages(config, rediscovery_messages(config, state))
 
 
 def normalized_topics(state: UPSState) -> dict[str, str]:

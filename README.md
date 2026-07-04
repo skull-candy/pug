@@ -92,6 +92,8 @@ All raw backend stats from `apcaccess` or NUT are preserved in `UPSState.raw` an
 - Web UI: status table plus a raw backend stats table.
 - SNMP: known `apcaccess` raw keys are exposed as read-only strings under `1.3.6.1.4.1.318.1.1.1.99.1`.
 
+If the UPS is removed from Home Assistant's MQTT integration and does not reappear, open `/settings` and use **Republish Discovery**. PUG clears the retained Home Assistant discovery topics and immediately publishes fresh retained configs.
+
 Install as a service:
 
 ```sh

@@ -26,6 +26,7 @@ from pug.config import (
 )
 from pug.diagnostics import DiagnosticManager, DiagnosticSnapshot, diagnostic_label
 from pug.frontends.homeassistant import discovery_payloads
+from pug.frontends.mqtt import publish_homeassistant_rediscovery
 from pug.frontends.prometheus import render_metrics
 from pug.raw_stats import state_payload
 from pug.state import StateStore
@@ -163,6 +164,19 @@ class HttpFrontend:
                         )
                     except ValueError as exc:
                         self._send_json({"ok": False, "message": str(exc)}, status=400)
+                    return
+                if self.path == "/homeassistant/rediscover":
+                    config = frontend.current_config()
+                    if not config.mqtt.enabled:
+                        self._send_json({"ok": False, "message": "MQTT publishing is disabled in Settings."}, status=400)
+                        return
+                    try:
+                        publish_homeassistant_rediscovery(config.mqtt, store.get())
+                    except OSError as exc:
+                        LOGGER.exception("Home Assistant rediscovery publish failed")
+                        self._send_json({"ok": False, "message": str(exc)}, status=502)
+                        return
+                    self._send_json({"ok": True, "message": "Home Assistant MQTT discovery was republished."})
                     return
                 if self.path != "/config":
                     self._send_json({"error": "not found"}, status=404)
@@ -795,6 +809,34 @@ def render_settings_page(config: AppConfig) -> str:
           <h1>Settings</h1>
           <p class="muted">Save writes config.yaml. Restart the service to apply backend, listener, SNMP, and MQTT runtime changes.</p>
           {render_config_form(config)}
+          <div class="section-head" style="margin-top:18px;">
+            <div>
+              <h2>Home Assistant</h2>
+              <p class="muted">Clear and republish retained MQTT discovery configs if the UPS was removed from Home Assistant.</p>
+            </div>
+            <button id="ha-rediscover" class="button secondary" type="button">Republish Discovery</button>
+          </div>
+          <p id="ha-rediscover-status" class="muted"></p>
+          <script>
+          (() => {{
+            const button = document.getElementById("ha-rediscover");
+            const status = document.getElementById("ha-rediscover-status");
+            button.addEventListener("click", async () => {{
+              if (!confirm("Republish Home Assistant MQTT discovery?\\n\\nThis clears retained discovery config topics and immediately publishes fresh configs for the UPS.")) return;
+              button.disabled = true;
+              status.textContent = "Republishing Home Assistant discovery...";
+              try {{
+                const response = await fetch("/homeassistant/rediscover", {{ method: "POST" }});
+                const payload = await response.json();
+                status.textContent = payload.message || (payload.ok ? "Discovery republished." : "Rediscovery failed.");
+              }} catch (error) {{
+                status.textContent = String(error);
+              }} finally {{
+                button.disabled = false;
+              }}
+            }});
+          }})();
+          </script>
         </section>
         """,
     )

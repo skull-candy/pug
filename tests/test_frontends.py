@@ -168,6 +168,8 @@ def test_settings_page_contains_configuration_form() -> None:
     assert "Preparation command" in page
     assert "Restore command" in page
     assert "Self test command" in page
+    assert "Republish Discovery" in page
+    assert "/homeassistant/rediscover" in page
 
 
 def test_logs_page_renders_bounded_tail(tmp_path) -> None:

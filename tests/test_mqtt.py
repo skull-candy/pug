@@ -1,5 +1,5 @@
 from pug.config import MqttConfig
-from pug.frontends.mqtt import _remaining_length, mqtt_messages, normalized_topics
+from pug.frontends.mqtt import _remaining_length, mqtt_messages, normalized_topics, rediscovery_messages
 from pug.state import UPSState
 
 
@@ -38,3 +38,15 @@ def test_mqtt_messages_include_normalized_temperature_topic() -> None:
 
     assert normalized_topics(state)["internal_temperature_c"] == "27.0"
     assert topics["powerpi/ups/internal_temperature_c"] == "27.0"
+
+
+def test_rediscovery_messages_clear_then_republish_discovery_topics() -> None:
+    messages = rediscovery_messages(MqttConfig(), UPSState(raw={"SELFTEST": "NG"}))
+    discovery_topic = "homeassistant/sensor/powerpi_ups/status/config"
+
+    first = next(message for message in messages if message[0] == discovery_topic)
+    last = [message for message in messages if message[0] == discovery_topic][-1]
+
+    assert first == (discovery_topic, "", True)
+    assert '"unique_id": "powerpi_ups_status"' in last[1]
+    assert last[2] is True

@@ -49,6 +49,8 @@ It also publishes:
 
 Home Assistant discovery publishes the UPS status sensor first, then classifies normalized UPS values with appropriate sensor metadata, including voltage, current, frequency, temperature, battery percentage, duration, power, apparent power, and diagnostic threshold sensors. Known `apcaccess` raw keys such as `LINEV`, `OUTCURNT`, `LINEFREQ`, `ITEMP`, `LOADPCT`, `LOADAPNT`, `NOMPOWER`, and `NOMAPNT` are also typed when discovery is published. All raw-key entities are marked as diagnostic entities. Raw values that include units are parsed with a value template so Home Assistant stores the numeric part as the sensor state.
 
+If a user removes the UPS from Home Assistant's MQTT integration, the Settings page can republish discovery. This clears retained discovery config topics and publishes fresh retained configs plus current state, which prompts Home Assistant to rediscover the UPS.
+
 MQTT support is implemented with a tiny MQTT 3.1.1 publisher and no runtime dependency.
 
 ## SNMP
