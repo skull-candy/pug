@@ -431,7 +431,7 @@ def render_dashboard_page(state: dict[str, Any], config: AppConfig) -> str:
             <h2>UPS Details</h2>
             <a class="text-link" href="/api/state">JSON</a>
           </div>
-          <div id="dashboard-details" class="detail-grid">{rows}</div>
+          <div id="dashboard-details" class="detail-grid compact-details">{rows}</div>
         </section>
         <script>
         (() => {{
@@ -581,6 +581,10 @@ def page_shell(title: str, active: str, content: str, auto_refresh: bool = False
     .detail-item {{ border:1px solid #edf1f5; border-radius:8px; padding:8px 10px; background:#fbfcfe; min-height:58px; }}
     .detail-item dt {{ color:var(--muted); font-size:12px; line-height:1.25; }}
     .detail-item dd {{ margin:3px 0 0; font-weight:700; line-height:1.25; overflow-wrap:anywhere; }}
+    .compact-details {{ grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 5px; }}
+    .compact-details .detail-item {{ min-height:0; padding:5px 7px; border-radius:6px; }}
+    .compact-details .detail-item dt {{ font-size:11px; line-height:1.15; }}
+    .compact-details .detail-item dd {{ margin-top:1px; font-size:13px; line-height:1.15; font-weight:700; }}
     table {{ border-collapse: collapse; width: 100%; }}
     th, td {{ border-bottom: 1px solid #edf1f5; padding: .55rem; text-align: left; vertical-align:top; }}
     th {{ width: 18rem; color: #57606a; font-weight: 700; }}

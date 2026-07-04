@@ -135,6 +135,7 @@ def test_dashboard_has_modern_sections_and_no_settings_form() -> None:
     assert 'class="power mobile"' in page
     assert "Input Voltage" in page
     assert "Output Voltage" in page
+    assert "compact-details" in page
     assert "Self Test" not in page
     assert "/assets/ups-icons/input.png" in page
     assert "/assets/ups-icons/avr.png" in page
