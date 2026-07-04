@@ -105,7 +105,7 @@ def discovery_payloads(state: UPSState, state_topic: str, discovery_prefix: str 
         topic = f"{discovery_prefix}/sensor/powerpi_ups_raw/{stat.slug}/config"
         spec = RAW_SENSOR_SPECS.get(stat.key.upper())
         if spec and stat.number is not None:
-            payloads[topic] = _sensor_payload(
+            payloads[topic] = _raw_sensor_payload(
                 name=f"UPS Raw {spec.name}",
                 unique_id=f"powerpi_ups_raw_{stat.slug}",
                 state_topic=f"{state_topic}/raw/{stat.slug}",
@@ -122,6 +122,19 @@ def discovery_payloads(state: UPSState, state_topic: str, discovery_prefix: str 
                 "entity_category": "diagnostic",
             }
     return payloads
+
+
+def _raw_sensor_payload(
+    name: str,
+    unique_id: str,
+    state_topic: str,
+    device: dict[str, Any],
+    spec: SensorSpec,
+    value_template: str | None = None,
+) -> dict[str, Any]:
+    payload = _sensor_payload(name, unique_id, state_topic, device, spec, value_template)
+    payload["entity_category"] = "diagnostic"
+    return payload
 
 
 def _sensor_payload(

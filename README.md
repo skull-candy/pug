@@ -87,7 +87,7 @@ All raw backend stats from `apcaccess` or NUT are preserved in `UPSState.raw` an
 - REST: `/api/state` includes `raw` and `raw_stats`; `/api/raw` returns only raw backend values.
 - MQTT: full state goes to `powerpi/ups`, UPS status goes to `powerpi/ups/status`, status flags go to `powerpi/ups/online`, `powerpi/ups/on_battery`, and `powerpi/ups/replace_battery`, raw JSON goes to `powerpi/ups/raw`, and every raw key gets `powerpi/ups/raw/<key>`.
 - MQTT normalized values are also published individually, such as `powerpi/ups/internal_temperature_c`, `powerpi/ups/input_voltage`, and `powerpi/ups/load_percent`.
-- Home Assistant: discovery includes the main normalized sensors, a UPS status sensor, online/on-battery/replace-battery binary sensors, and raw-key sensors.
+- Home Assistant: discovery includes the main normalized sensors, a UPS status sensor first, online/on-battery/replace-battery binary sensors, and raw-key sensors marked as diagnostic entities.
 - Prometheus: normalized gauges, `powerpi_ups_status_info`, plus `powerpi_ups_raw_numeric` and `powerpi_ups_raw_info`.
 - Web UI: status table plus a raw backend stats table.
 - SNMP: known `apcaccess` raw keys are exposed as read-only strings under `1.3.6.1.4.1.318.1.1.1.99.1`.

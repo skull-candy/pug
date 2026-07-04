@@ -47,7 +47,7 @@ It also publishes:
 - `<topic_prefix>/raw/<key>`: one topic per raw backend key.
 - Retained Home Assistant discovery config messages under `mqtt.discovery_prefix`.
 
-Home Assistant discovery classifies normalized UPS values with appropriate sensor metadata, including voltage, current, frequency, temperature, battery percentage, duration, power, apparent power, and diagnostic threshold sensors. Known `apcaccess` raw keys such as `LINEV`, `OUTCURNT`, `LINEFREQ`, `ITEMP`, `LOADPCT`, `LOADAPNT`, `NOMPOWER`, and `NOMAPNT` are also typed when discovery is published. Raw values that include units are parsed with a value template so Home Assistant stores the numeric part as the sensor state.
+Home Assistant discovery publishes the UPS status sensor first, then classifies normalized UPS values with appropriate sensor metadata, including voltage, current, frequency, temperature, battery percentage, duration, power, apparent power, and diagnostic threshold sensors. Known `apcaccess` raw keys such as `LINEV`, `OUTCURNT`, `LINEFREQ`, `ITEMP`, `LOADPCT`, `LOADAPNT`, `NOMPOWER`, and `NOMAPNT` are also typed when discovery is published. All raw-key entities are marked as diagnostic entities. Raw values that include units are parsed with a value template so Home Assistant stores the numeric part as the sensor state.
 
 MQTT support is implemented with a tiny MQTT 3.1.1 publisher and no runtime dependency.
 

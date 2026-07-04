@@ -38,6 +38,7 @@ def test_prometheus_metrics_include_raw_values() -> None:
 def test_homeassistant_discovery_payloads_include_battery_sensor() -> None:
     payloads = discovery_payloads(simulator_state(), "powerpi/ups")
 
+    assert next(iter(payloads)) == "homeassistant/sensor/powerpi_ups/status/config"
     topic = "homeassistant/sensor/powerpi_ups/battery_charge/config"
     assert topic in payloads
     assert payloads[topic]["state_topic"] == "powerpi/ups/battery_charge_percent"
@@ -86,10 +87,13 @@ def test_homeassistant_discovery_payloads_type_apcupsd_raw_sensors() -> None:
     frequency = payloads["homeassistant/sensor/powerpi_ups_raw/linefreq/config"]
     assert linev["device_class"] == "voltage"
     assert linev["unit_of_measurement"] == "V"
+    assert linev["entity_category"] == "diagnostic"
     assert current["device_class"] == "current"
     assert current["unit_of_measurement"] == "A"
+    assert current["entity_category"] == "diagnostic"
     assert frequency["device_class"] == "frequency"
     assert frequency["unit_of_measurement"] == "Hz"
+    assert frequency["entity_category"] == "diagnostic"
     assert linev["value_template"] == "{{ value | regex_findall_index('[-+]?[0-9]*\\.?[0-9]+') | float }}"
 
 
