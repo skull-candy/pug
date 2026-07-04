@@ -109,6 +109,12 @@ class HttpFrontend:
                         "text/html; charset=utf-8",
                         render_raw_stats_page(state.to_dict(), config).encode(),
                     )
+                elif self.path == "/ui/live/dashboard":
+                    self._send_json(dashboard_live_payload(state.to_dict()))
+                elif self.path == "/ui/live/raw":
+                    self._send_json(raw_live_payload(state.to_dict()))
+                elif self.path == "/ui/live/logs":
+                    self._send_json(logs_live_payload(config))
                 elif self.path == "/api/state":
                     if config.http.api_enabled:
                         self._send_json(state_payload(state))
@@ -336,6 +342,29 @@ def diagnostics_api_payload(state: dict[str, Any], diagnostic: DiagnosticSnapsho
     return {"state": state, "diagnostic": diagnostic.to_dict()}
 
 
+def dashboard_live_payload(state: dict[str, Any]) -> dict[str, str]:
+    return {
+        "title": str(state.get("name", "PowerPi UPS")),
+        "status": display_value("status_text", state.get("status_text", "-")),
+        "health_text": "Healthy" if state.get("online") else "Attention",
+        "health_class": "ok" if state.get("online") else "warn",
+        "overview": render_overview_cards(state),
+        "diagram": render_power_flow_diagram(state),
+        "details": render_detail_rows(state),
+    }
+
+
+def raw_live_payload(state: dict[str, Any]) -> dict[str, str]:
+    return {"rows": render_raw_rows(state)}
+
+
+def logs_live_payload(config: AppConfig) -> dict[str, list[str]]:
+    return {
+        "pug": tail_log_lines(config.logging.file_path, config.logging.web_tail_lines),
+        "apcupsd": tail_log_lines(config.logging.apcupsd_events_path, config.logging.web_tail_lines),
+    }
+
+
 def read_ups_icon(filename: str) -> bytes | None:
     allowed = {"input.png", "avr.png", "bypass.png", "inverter.png", "battery.png", "load.png"}
     if filename not in allowed:
@@ -363,13 +392,13 @@ def render_dashboard_page(state: dict[str, Any], config: AppConfig) -> str:
         <section class="hero-panel">
           <div class="hero-head">
             <div>
-              <h1>{title}</h1>
-              <p class="muted">{_escape(display_value("status_text", state.get("status_text", "-")))}</p>
+              <h1 id="dashboard-title">{title}</h1>
+              <p id="dashboard-status" class="muted">{_escape(display_value("status_text", state.get("status_text", "-")))}</p>
             </div>
-            <span class="health {'ok' if state.get('online') else 'warn'}">{'Healthy' if state.get('online') else 'Attention'}</span>
+            <span id="dashboard-health" class="health {'ok' if state.get('online') else 'warn'}">{'Healthy' if state.get('online') else 'Attention'}</span>
           </div>
-          {overview}
-          {diagram}
+          <div id="dashboard-overview">{overview}</div>
+          <div id="dashboard-diagram">{diagram}</div>
         </section>
 
         <section>
@@ -377,19 +406,38 @@ def render_dashboard_page(state: dict[str, Any], config: AppConfig) -> str:
             <h2>UPS Details</h2>
             <a class="text-link" href="/api/state">JSON</a>
           </div>
-          <div class="detail-grid">{rows}</div>
+          <div id="dashboard-details" class="detail-grid">{rows}</div>
         </section>
+        <script>
+        (() => {{
+          const setText = (id, value) => {{
+            const node = document.getElementById(id);
+            if (node) node.textContent = value;
+          }};
+          const refresh = async () => {{
+            const response = await fetch("/ui/live/dashboard", {{ cache: "no-store" }});
+            if (!response.ok) return;
+            const payload = await response.json();
+            setText("dashboard-title", payload.title);
+            setText("dashboard-status", payload.status);
+            const health = document.getElementById("dashboard-health");
+            if (health) {{
+              health.textContent = payload.health_text;
+              health.className = `health ${{payload.health_class}}`;
+            }}
+            document.getElementById("dashboard-overview").innerHTML = payload.overview;
+            document.getElementById("dashboard-diagram").innerHTML = payload.diagram;
+            document.getElementById("dashboard-details").innerHTML = payload.details;
+          }};
+          setInterval(refresh, 3000);
+        }})();
+        </script>
         """,
     )
 
 
 def render_raw_stats_page(state: dict[str, Any], config: AppConfig) -> str:
-    raw_rows = "\n".join(
-        f"<tr><th>{_escape(raw_display_label(str(key)))}</th><td>{_escape(str(value))}</td></tr>"
-        for key, value in sorted(state.get("raw", {}).items())
-    )
-    if not raw_rows:
-        raw_rows = '<tr><td colspan="2" class="muted">No raw backend stats are available yet.</td></tr>'
+    raw_rows = render_raw_rows(state)
     return page_shell(
         "Raw Backend Stats",
         "raw",
@@ -402,13 +450,34 @@ def render_raw_stats_page(state: dict[str, Any], config: AppConfig) -> str:
             </div>
             <a class="text-link" href="/api/raw">Raw JSON</a>
           </div>
-          <table>{raw_rows}</table>
+          <table><tbody id="raw-stats-rows">{raw_rows}</tbody></table>
         </section>
+        <script>
+        (() => {{
+          const refresh = async () => {{
+            const response = await fetch("/ui/live/raw", {{ cache: "no-store" }});
+            if (!response.ok) return;
+            const payload = await response.json();
+            document.getElementById("raw-stats-rows").innerHTML = payload.rows;
+          }};
+          setInterval(refresh, 3000);
+        }})();
+        </script>
         """,
     )
 
 
-def page_shell(title: str, active: str, content: str, auto_refresh: bool = True) -> str:
+def render_raw_rows(state: dict[str, Any]) -> str:
+    raw_rows = "\n".join(
+        f"<tr><th>{_escape(raw_display_label(str(key)))}</th><td>{_escape(str(value))}</td></tr>"
+        for key, value in sorted(state.get("raw", {}).items())
+    )
+    if not raw_rows:
+        return '<tr><td colspan="2" class="muted">No raw backend stats are available yet.</td></tr>'
+    return raw_rows
+
+
+def page_shell(title: str, active: str, content: str, auto_refresh: bool = False) -> str:
     refresh = '<meta http-equiv="refresh" content="30">' if auto_refresh else ""
     return f"""<!doctype html>
 <html lang="en">
@@ -855,9 +924,9 @@ def render_logs_page(config: AppConfig, lines: list[str], apcupsd_event_lines: l
               <h1>Logs</h1>
               <p class="muted">Showing the last {config.logging.web_tail_lines} lines from {_escape(config.logging.file_path)}.</p>
             </div>
-            <a class="button secondary" href="/logs">Refresh</a>
+            <button id="refresh-logs" class="button secondary" type="button">Refresh</button>
           </div>
-          <pre class="log-view">{log_lines or 'No log lines available.'}</pre>
+          <pre id="pug-log-view" class="log-view">{log_lines or 'No log lines available.'}</pre>
         </section>
         <section>
           <div class="section-head">
@@ -866,8 +935,25 @@ def render_logs_page(config: AppConfig, lines: list[str], apcupsd_event_lines: l
               <p class="muted">Showing the last {config.logging.web_tail_lines} lines from {_escape(config.logging.apcupsd_events_path)}.</p>
             </div>
           </div>
-          <pre class="log-view">{apcupsd_lines or 'No apcupsd event lines available.'}</pre>
+          <pre id="apcupsd-log-view" class="log-view">{apcupsd_lines or 'No apcupsd event lines available.'}</pre>
         </section>
+        <script>
+        (() => {{
+          const setLines = (id, lines, emptyText) => {{
+            const node = document.getElementById(id);
+            if (node) node.textContent = lines && lines.length ? lines.join("\\n") : emptyText;
+          }};
+          const refresh = async () => {{
+            const response = await fetch("/ui/live/logs", {{ cache: "no-store" }});
+            if (!response.ok) return;
+            const payload = await response.json();
+            setLines("pug-log-view", payload.pug, "No log lines available.");
+            setLines("apcupsd-log-view", payload.apcupsd, "No apcupsd event lines available.");
+          }};
+          document.getElementById("refresh-logs").addEventListener("click", refresh);
+          setInterval(refresh, 5000);
+        }})();
+        </script>
         """,
     )
 

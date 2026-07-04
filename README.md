@@ -43,6 +43,7 @@ Only the collector reads the UPS backend. SNMP, MQTT, REST, Prometheus, Home Ass
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -e .
+if (!(Test-Path config/config.yaml)) { Copy-Item config/config.example.yaml config/config.yaml }
 python -m pug.main --simulator --config config/config.yaml
 ```
 
@@ -58,8 +59,11 @@ cd /opt/pug
 python3 -m venv .venv
 . .venv/bin/activate
 pip install -e .
+cp -n config/config.example.yaml config/config.yaml
 sudo python -m pug.main --simulator --config config/config.yaml
 ```
+
+`config/config.yaml` is ignored by Git so local settings are not overwritten by pulls. Keep defaults in `config/config.example.yaml`; copy it again only when you intentionally want to reset your local config.
 
 The systemd service file assumes the repo lives at `/opt/pug`. If your checkout is nested somewhere else, such as `/opt/powerpi-ups-gateway/pug`, either move it to `/opt/pug` or edit `WorkingDirectory` and `ExecStart` in `systemd/powerpi-ups-gateway.service` before installing the service.
 
@@ -78,7 +82,7 @@ HTTP defaults to port `8080`:
 - `http://<host>:8080/settings` configuration
 - `http://<host>:8080/logs` bounded PUG log and apcupsd event log tail view
 
-The Web UI is the always-on control plane. The dashboard shows a mode-aware UPS power-flow diagram, overview cards, UPS details, and raw backend stats. The diagram highlights line/AVR, battery, bypass, or conversion path based on UPS status and input/output voltage. Diagnostics live on `/diagnostics`; use that page to start an apcupsd self-test or battery calibration and watch the live command status, latest UPS status, and command output. Settings live on `/settings`; use that page to edit backend, SNMP, API, Prometheus, Home Assistant, MQTT, logging, and diagnostics settings. Save writes `config.yaml`; restart the service to apply backend, listener, SNMP, and MQTT runtime changes. Logs live on `/logs` and tail both the PUG log and apcupsd events file, defaulting to `/var/log/apcupsd.events`. Both views only read the configured number of lines, so huge log files do not slow the UI.
+The Web UI is the always-on control plane. The dashboard shows a live mode-aware UPS power-flow diagram, overview cards, UPS details, and raw backend stats without page reloads. The diagram highlights line/AVR, battery, bypass, or conversion path based on UPS status and input/output voltage. Diagnostics live on `/diagnostics`; use that page to start an apcupsd self-test or battery calibration and watch the live command status, latest UPS status, and command output. Settings live on `/settings`; use that page to edit backend, SNMP, API, Prometheus, Home Assistant, MQTT, logging, and diagnostics settings. Save writes `config.yaml`; restart the service to apply backend, listener, SNMP, and MQTT runtime changes. Logs live on `/logs` and tail both the PUG log and apcupsd events file, defaulting to `/var/log/apcupsd.events`. Both views update without page reloads and only read the configured number of lines, so huge log files do not slow the UI.
 
 Diagnostics stop `apcupsd`, run `apctest`, then start `apcupsd` again by default. They use `apctest` menu selection `2` for self-test and `10` for battery calibration. Monitoring is unavailable while `apcupsd` is stopped, and battery calibration can run for a long time while intentionally discharging the UPS battery. Adjust the configured diagnostics commands if your host needs a wrapper script for service control or sudo.
 

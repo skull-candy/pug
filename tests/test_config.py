@@ -4,7 +4,7 @@ from pug.config import AppConfig, BackendConfig, ConfigError, SnmpConfig, load_c
 
 
 def test_load_config_reads_project_example() -> None:
-    config = load_config("config/config.yaml")
+    config = load_config("config/config.example.yaml")
 
     assert config.backend.type == "apcupsd"
     assert config.backend.command == ["apcaccess", "status", "localhost:3551"]

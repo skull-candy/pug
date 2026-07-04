@@ -120,6 +120,8 @@ def test_dashboard_has_modern_sections_and_no_settings_form() -> None:
     page = render_control_page(simulator_state().to_dict(), AppConfig())
 
     assert "UPS power flow diagram" in page
+    assert "/ui/live/dashboard" in page
+    assert '<meta http-equiv="refresh" content="30">' not in page
     assert "Line / AVR path active" in page
     assert "Line / AVR" in page
     assert "Bypass Path" in page
@@ -153,6 +155,7 @@ def test_raw_stats_page_contains_backend_values() -> None:
 
     assert "Raw Backend Stats" in page
     assert 'href="/api/raw"' in page
+    assert "/ui/live/raw" in page
     assert "Input Voltage" in page
     assert "221.7 Volts" in page
     assert 'class="active" href="/raw"' in page
@@ -187,6 +190,7 @@ def test_logs_page_renders_bounded_tail(tmp_path) -> None:
     assert "line 19" in page
     assert "event 9" in page
     assert "apcupsd Events" in page
+    assert "/ui/live/logs" in page
     assert "line 1\n" not in page
 
 
