@@ -28,7 +28,7 @@ def test_update_snapshot_serializes_for_web_ui() -> None:
 
     assert payload["status"] == "available"
     assert payload["update_available"] is True
-    assert payload["installed_version"] == "0.1.3"
+    assert payload["installed_version"] == "0.1.5"
     assert payload["latest_version"] == "v1.0.0"
     assert payload["latest_release_url"] == "https://git.vns.ae/ahsan/pug/-/releases/v1.0.0"
     assert payload["checked_at"] == "2026-07-04T12:00:00+00:00"
@@ -61,7 +61,7 @@ def test_update_check_interval_can_be_disabled() -> None:
 
 
 def test_version_comparison_supports_beta_and_release_tags() -> None:
-    assert is_newer_version("v1.0b", "0.1.3") is True
+    assert is_newer_version("v1.0b", "0.1.5") is True
     assert is_newer_version("v1.0.0-beta.1", "v1.0b") is True
     assert is_newer_version("v1.0.0", "v1.0.0-beta.1") is True
     assert compare_versions("v1.0.0", "1.0.0") == 0
@@ -81,3 +81,22 @@ def test_disabled_update_manager_never_checks_gitlab(monkeypatch) -> None:
     assert manager.check_if_due() is False
     assert manager.check().status == "disabled"
     assert called is False
+
+
+def test_manual_update_check_bypasses_interval_gate(monkeypatch) -> None:
+    now = datetime(2026, 7, 5, 12, tzinfo=timezone.utc)
+    calls = []
+
+    def fake_check_for_update(_config):
+        calls.append("checked")
+        return {
+            "latest_version": "v9.0.0",
+            "latest_release_url": "https://git.vns.ae/ahsan/pug/-/releases/v9.0.0",
+            "latest_release_name": "PUG v9.0.0",
+        }
+
+    monkeypatch.setattr("pug.updater.check_for_update", fake_check_for_update)
+    manager = UpdateManager(config=AppConfig(update=UpdateConfig(last_update_check=now.isoformat())))
+
+    assert manager.check().latest_version == "v9.0.0"
+    assert calls == ["checked"]

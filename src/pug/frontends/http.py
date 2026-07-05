@@ -193,8 +193,7 @@ class HttpFrontend:
                         self._send_json({"ok": False, "message": str(exc)}, status=400)
                     return
                 if self.path == "/api/updates/check":
-                    frontend.updater.check_if_due()
-                    self._send_json(frontend.updater.snapshot().to_dict())
+                    self._send_json(frontend.updater.check().to_dict())
                     return
                 if self.path == "/api/updates/install":
                     started = frontend.updater.start_install()
@@ -628,9 +627,9 @@ def page_shell(title: str, active: str, content: str, auto_refresh: bool = False
     .detail-item dt {{ color:var(--muted); font-size:12px; line-height:1.25; }}
     .detail-item dd {{ margin:3px 0 0; font-weight:700; line-height:1.25; overflow-wrap:anywhere; }}
     .compact-details {{ grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 0; }}
-    .compact-details .detail-item {{ min-height:0; padding:1px 2px; border-radius:0; }}
-    .compact-details .detail-item dt {{ font-size:10px; line-height:1.05; }}
-    .compact-details .detail-item dd {{ margin-top:0; font-size:12px; line-height:1.05; font-weight:700; }}
+    .compact-details .detail-item {{ min-height:0; padding:1px 6px; border-radius:0; }}
+    .compact-details .detail-item dt {{ line-height:1.05; }}
+    .compact-details .detail-item dd {{ margin-top:0; line-height:1.05; font-weight:700; }}
     table {{ border-collapse: collapse; width: 100%; }}
     th, td {{ border-bottom: 1px solid #edf1f5; padding: .55rem; text-align: left; vertical-align:top; }}
     th {{ width: 18rem; color: #57606a; font-weight: 700; }}

@@ -127,7 +127,7 @@ def test_dashboard_has_modern_sections_and_no_settings_form() -> None:
     assert '<meta http-equiv="refresh" content="30">' not in page
     assert "Administration" in page
     assert "Developed By: Ahsan Muhammad" in page
-    assert "Version 0.1.3" in page
+    assert "Version 0.1.5" in page
     assert 'id="update-banner-text"' in page
     assert "Line / AVR path active" in page
     assert "Line / AVR" in page
@@ -139,7 +139,9 @@ def test_dashboard_has_modern_sections_and_no_settings_form() -> None:
     assert "Output Voltage" in page
     assert "compact-details" in page
     assert "gap: 0" in page
-    assert "padding:1px 2px" in page
+    assert "padding:1px 6px" in page
+    assert ".compact-details .detail-item dt { line-height:1.05; }" in page
+    assert ".compact-details .detail-item dd { margin-top:0; line-height:1.05; font-weight:700; }" in page
     assert "metric-icon" not in page
     assert "Self Test" not in page
     assert "/assets/ups-icons/input.png" in page

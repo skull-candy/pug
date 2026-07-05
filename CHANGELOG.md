@@ -46,3 +46,6 @@ This project follows the spirit of Keep a Changelog. Update this file for every 
 - Bumped the application version to `0.1.2`.
 - Refined the dashboard power-flow diagram for battery charging/on-battery states, removed overview icons, tightened UPS Details spacing, improved live refresh, and added configurable timestamp timezone display.
 - Bumped the application version to `0.1.3`.
+- Restored UPS Details text sizing while keeping compact row padding and made the manual update check button force a GitLab Releases check.
+- Bumped the application version to `0.1.4`.
+- Bumped the application version to `0.1.5` for the Git tag and release refresh.

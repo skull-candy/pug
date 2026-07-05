@@ -40,3 +40,4 @@ This file tracks known follow-up work. Update it with every codebase change, eve
 - Added version bump rule, background update checks, and top-of-page update banner.
 - Switched update detection to GitLab Releases with configurable check cadence and persisted latest-release metadata.
 - Refined dashboard power-flow behavior, UPS Details density, and configurable timestamp timezone display.
+- Restored UPS Details text sizing and made the manual update check button bypass the interval gate.
