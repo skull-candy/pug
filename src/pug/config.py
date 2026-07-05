@@ -69,6 +69,17 @@ class DiagnosticsConfig:
 
 
 @dataclass(frozen=True)
+class UpdateConfig:
+    gitlab_base_url: str = "https://git.vns.ae"
+    project_path: str = "ahsan/pug"
+    check_interval: str = "7d"
+    last_update_check: str = ""
+    latest_version: str = ""
+    latest_release_url: str = ""
+    latest_release_name: str = ""
+
+
+@dataclass(frozen=True)
 class AppConfig:
     backend: BackendConfig = field(default_factory=BackendConfig)
     snmp: SnmpConfig = field(default_factory=SnmpConfig)
@@ -76,6 +87,7 @@ class AppConfig:
     mqtt: MqttConfig = field(default_factory=MqttConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     diagnostics: DiagnosticsConfig = field(default_factory=DiagnosticsConfig)
+    update: UpdateConfig = field(default_factory=UpdateConfig)
 
 
 def load_config(path: str | Path | None) -> AppConfig:
@@ -97,6 +109,7 @@ def config_from_mapping(data: dict[str, Any]) -> AppConfig:
     mqtt = data.get("mqtt", {})
     logging = data.get("logging", {})
     diagnostics = data.get("diagnostics", {})
+    update = data.get("update", {})
     return AppConfig(
         backend=BackendConfig(
             type=str(backend.get("type", "apcupsd")),
@@ -143,6 +156,15 @@ def config_from_mapping(data: dict[str, Any]) -> AppConfig:
             battery_calibration_command=list(diagnostics.get("battery_calibration_command", ["apctest"])),
             battery_calibration_selection=str(diagnostics.get("battery_calibration_selection", "10")),
             command_timeout_seconds=int(diagnostics.get("command_timeout_seconds", 21600)),
+        ),
+        update=UpdateConfig(
+            gitlab_base_url=str(update.get("gitlab_base_url", "https://git.vns.ae")),
+            project_path=str(update.get("project_path", "ahsan/pug")),
+            check_interval=str(update.get("check_interval", "7d")),
+            last_update_check=str(update.get("last_update_check", "")),
+            latest_version=str(update.get("latest_version", "")),
+            latest_release_url=str(update.get("latest_release_url", "")),
+            latest_release_name=str(update.get("latest_release_name", "")),
         ),
     )
 
@@ -192,6 +214,12 @@ def validate_config(config: AppConfig) -> None:
         raise ConfigError("diagnostics.battery_calibration_selection must not be empty")
     if config.diagnostics.command_timeout_seconds <= 0:
         raise ConfigError("diagnostics.command_timeout_seconds must be greater than zero")
+    if config.update.check_interval not in {"off", "1d", "7d"}:
+        raise ConfigError("update.check_interval must be off, 1d, or 7d")
+    if not config.update.gitlab_base_url:
+        raise ConfigError("update.gitlab_base_url must not be empty")
+    if not config.update.project_path:
+        raise ConfigError("update.project_path must not be empty")
 
 
 def _parse_simple_yaml(text: str) -> dict[str, Any]:

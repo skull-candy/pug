@@ -14,7 +14,7 @@ When enabled, the HTTP frontend serves:
 - `/diagnostics`: self-test and battery calibration controls with live command status.
 - `/settings`: configuration form.
 - `/logs`: bounded PUG log and apcupsd event log tail view.
-- `/updates`: update check and install page for the public repository.
+- `/updates`: GitLab Releases update check and install page.
 - `/healthz`: health check.
 
 The Web UI at `/ui` is a dashboard with metric cards, a mode-aware animated power-flow diagram, UPS details, and raw backend stats. Dashboard remains the only top-level navigation item; Raw Stats, Diagnostics, Settings, Logs, Updates, and Metrics are grouped under Administration. The dashboard, raw stats page, logs page, and diagnostics page poll small internal endpoints so live UPS data updates without full page reloads. The diagram highlights line/AVR mode when the UPS is online and input/output voltage are close, battery mode when on battery, bypass mode when status reports bypass, and conversion mode when online with a meaningful input/output voltage difference.
@@ -29,13 +29,14 @@ The settings page at `/settings` includes a configuration form for:
 - MQTT enablement, broker, topics, credentials, and publish interval.
 - Logging level.
 - Log file path and log tail line count.
+- GitLab Releases update source and check interval.
 - Diagnostics preparation/restore commands, apctest menu selections, and command timeout.
 
 Saving the form writes `config.yaml` and restarts the `powerpi-ups-gateway` service to apply backend, listener, SNMP, and MQTT runtime changes.
 
 The logs page reads only the last configured number of lines from the configured PUG log file and apcupsd events file. It does not load full files into memory. The default apcupsd events path is `/var/log/apcupsd.events`, and it can be changed from Settings.
 
-PUG checks for updates in the background and shows a top-of-page banner when a newer upstream commit is available. The updates page checks `https://git.vns.ae/ahsan/pug`, compares the local commit with the fetched upstream commit, and can install a fast-forward-only update. Installation runs `git fetch`, `git merge --ff-only`, reinstalls the package with the current Python, and restarts the `powerpi-ups-gateway` systemd service.
+PUG checks GitLab Releases on startup and from a background scheduler only when the configured interval has expired. The default interval is 7 days, with settings for off, 1 day, and 7 days. The check calls `<gitlab_base_url>/api/v4/projects/<url-encoded-project-path>/releases/permalink/latest`, compares the installed app version with the release `tag_name`, and stores the last check time, latest version, release URL, and release name in config. If checks are disabled or GitLab is unreachable, the Web UI does not block normal use. When a newer release exists, the top-of-page banner links to that release page.
 
 ## MQTT
 

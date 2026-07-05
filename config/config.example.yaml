@@ -43,3 +43,12 @@ diagnostics:
   battery_calibration_command: ["apctest"]
   battery_calibration_selection: "10"
   command_timeout_seconds: 21600
+
+update:
+  gitlab_base_url: "https://git.vns.ae"
+  project_path: "ahsan/pug"
+  check_interval: "7d"
+  last_update_check: ""
+  latest_version: ""
+  latest_release_url: ""
+  latest_release_name: ""

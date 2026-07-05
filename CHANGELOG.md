@@ -41,3 +41,6 @@ This project follows the spirit of Keep a Changelog. Update this file for every 
 - Updated documentation for the public repository at `https://git.vns.ae/ahsan/pug`.
 - Added background update checks with a top-of-page banner when a newer version is available.
 - Tightened dashboard UPS Details row spacing and bumped the application version to `0.1.1`.
+- Saving Web UI settings now restarts the `powerpi-ups-gateway` service after writing `config.yaml`.
+- Switched update detection to GitLab Releases, with configurable self-hosted GitLab base URL, release check interval, persisted latest release metadata, and non-blocking release banners.
+- Bumped the application version to `0.1.2`.

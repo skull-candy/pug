@@ -20,6 +20,7 @@ from pug.config import (
     LoggingConfig,
     MqttConfig,
     SnmpConfig,
+    UpdateConfig,
     format_command,
     load_config,
     parse_command,
@@ -32,7 +33,7 @@ from pug.frontends.mqtt import publish_homeassistant_rediscovery
 from pug.frontends.prometheus import render_metrics
 from pug.raw_stats import state_payload
 from pug.state import StateStore
-from pug.updater import PUBLIC_REPO_URL, SERVICE_NAME, UpdateManager, UpdateSnapshot, restart_service_later
+from pug.updater import SERVICE_NAME, UpdateManager, UpdateSnapshot, restart_service_later
 
 LOGGER = logging.getLogger(__name__)
 
@@ -52,7 +53,7 @@ class HttpFrontend:
         self.listen = listen
         self.port = port
         self.diagnostics = DiagnosticManager()
-        self.updater = UpdateManager()
+        self.updater = UpdateManager(self.config_path, config)
 
     def serve_forever(self, stop: Event) -> None:
         handler = self._handler()
@@ -191,7 +192,8 @@ class HttpFrontend:
                         self._send_json({"ok": False, "message": str(exc)}, status=400)
                     return
                 if self.path == "/api/updates/check":
-                    self._send_json(frontend.updater.check().to_dict())
+                    frontend.updater.check_if_due()
+                    self._send_json(frontend.updater.snapshot().to_dict())
                     return
                 if self.path == "/api/updates/install":
                     started = frontend.updater.start_install()
@@ -223,7 +225,7 @@ class HttpFrontend:
                 body = self.rfile.read(length).decode("utf-8")
                 form = parse_qs(body, keep_blank_values=True)
                 try:
-                    config = config_from_form(form)
+                    config = config_from_form(form, frontend.current_config())
                     save_config(config, frontend.config_path)
                     frontend.config = config
                 except (ConfigError, ValueError) as exc:
@@ -271,7 +273,12 @@ def schedule_service_restart() -> None:
     Thread(target=restart_service_later, name="config-service-restarter", daemon=True).start()
 
 
-def config_from_form(form: dict[str, list[str]]) -> AppConfig:
+def config_from_form(form: dict[str, list[str]], current_config: AppConfig | None = None) -> AppConfig:
+    update_defaults = current_config.update if current_config else UpdateConfig()
+    update_gitlab_base_url = _field(form, "update_gitlab_base_url") or update_defaults.gitlab_base_url
+    update_project_path = _field(form, "update_project_path") or update_defaults.project_path
+    if update_gitlab_base_url != update_defaults.gitlab_base_url or update_project_path != update_defaults.project_path:
+        update_defaults = UpdateConfig(gitlab_base_url=update_gitlab_base_url, project_path=update_project_path)
     config = AppConfig(
         backend=BackendConfig(
             type=_field(form, "backend_type"),
@@ -318,6 +325,15 @@ def config_from_form(form: dict[str, list[str]]) -> AppConfig:
             battery_calibration_command=parse_command(_field(form, "diagnostics_battery_calibration_command")),
             battery_calibration_selection=_field(form, "diagnostics_battery_calibration_selection"),
             command_timeout_seconds=int(_field(form, "diagnostics_command_timeout_seconds")),
+        ),
+        update=UpdateConfig(
+            gitlab_base_url=update_gitlab_base_url,
+            project_path=update_project_path,
+            check_interval=_field(form, "update_check_interval") or update_defaults.check_interval,
+            last_update_check=update_defaults.last_update_check,
+            latest_version=update_defaults.latest_version,
+            latest_release_url=update_defaults.latest_release_url,
+            latest_release_name=update_defaults.latest_release_name,
         ),
     )
     validate_config(config)
@@ -371,6 +387,15 @@ def config_to_public_dict(config: AppConfig) -> dict[str, Any]:
             "battery_calibration_command": config.diagnostics.battery_calibration_command,
             "battery_calibration_selection": config.diagnostics.battery_calibration_selection,
             "command_timeout_seconds": config.diagnostics.command_timeout_seconds,
+        },
+        "update": {
+            "gitlab_base_url": config.update.gitlab_base_url,
+            "project_path": config.update.project_path,
+            "check_interval": config.update.check_interval,
+            "last_update_check": config.update.last_update_check,
+            "latest_version": config.update.latest_version,
+            "latest_release_url": config.update.latest_release_url,
+            "latest_release_name": config.update.latest_release_name,
         },
     }
 
@@ -650,8 +675,8 @@ def page_shell(title: str, active: str, content: str, auto_refresh: bool = False
     </nav>
   </header>
   <div id="update-banner" class="update-banner">
-    <span>New PUG version available.</span>
-    <a href="/updates">Open Updates</a>
+    <span id="update-banner-text"></span>
+    <a id="update-banner-link" href="/updates">Open Release</a>
   </div>
   <main>{content}</main>
   <footer class="footer">
@@ -661,12 +686,19 @@ def page_shell(title: str, active: str, content: str, auto_refresh: bool = False
   <script>
   (() => {{
     const banner = document.getElementById("update-banner");
+    const bannerText = document.getElementById("update-banner-text");
+    const bannerLink = document.getElementById("update-banner-link");
     const refreshUpdateBanner = async () => {{
       try {{
         const response = await fetch("/api/updates", {{ cache: "no-store" }});
         if (!response.ok) return;
         const payload = await response.json();
-        banner.classList.toggle("show", Boolean(payload.update_available));
+        const show = Boolean(payload.update_available);
+        banner.classList.toggle("show", show);
+        if (show) {{
+          bannerText.textContent = `New version available: ${{payload.latest_version}}. Installed: ${{payload.installed_version}}.`;
+          bannerLink.href = payload.latest_release_url || "/updates";
+        }}
       }} catch (error) {{}}
     }};
     refreshUpdateBanner();
@@ -967,6 +999,10 @@ def _format_time(value: datetime | None) -> str:
     return value.isoformat().replace("T", " ").replace("+00:00", " UTC")
 
 
+def update_interval_label(value: str) -> str:
+    return {"off": "off", "1d": "1 day", "7d": "7 days"}.get(value, value)
+
+
 def render_settings_page(config: AppConfig) -> str:
     return page_shell(
         "Settings",
@@ -1059,6 +1095,7 @@ def render_logs_page(config: AppConfig, lines: list[str], apcupsd_event_lines: l
 def render_updates_page(snapshot: UpdateSnapshot) -> str:
     output = "\n".join(_escape(line.rstrip("\n")) for line in snapshot.output)
     install_disabled = " disabled" if snapshot.status == "installing" or not snapshot.update_available else ""
+    release_link = f'<a id="update-release-link" href="{_escape(snapshot.latest_release_url or "/updates")}">{_escape(snapshot.latest_release_url or "-")}</a>'
     return page_shell(
         "Updates",
         "updates",
@@ -1067,16 +1104,16 @@ def render_updates_page(snapshot: UpdateSnapshot) -> str:
           <div class="section-head">
             <div>
               <h1>Updates</h1>
-              <p class="muted">Check, download, and install updates from {_escape(PUBLIC_REPO_URL)}.</p>
+              <p class="muted">Checks GitLab Releases from {_escape(snapshot.gitlab_base_url)} for {_escape(snapshot.project_path)}.</p>
             </div>
             <span id="update-status-pill" class="health {'warn' if snapshot.update_available else 'ok'}">{_escape(snapshot.status.title())}</span>
           </div>
           <div class="diagnostic-status">
-            <dl class="detail-item"><dt>Installed Version</dt><dd>{_escape(__version__)}</dd></dl>
-            <dl class="detail-item"><dt>Current Commit</dt><dd id="update-current">{_escape(snapshot.current_commit or "-")}</dd></dl>
-            <dl class="detail-item"><dt>Latest Commit</dt><dd id="update-latest">{_escape(snapshot.latest_commit or "-")}</dd></dl>
-            <dl class="detail-item"><dt>Branch</dt><dd id="update-branch">{_escape(snapshot.branch or "-")}</dd></dl>
-            <dl class="detail-item"><dt>Remote</dt><dd id="update-remote">{_escape(snapshot.remote or PUBLIC_REPO_URL)}</dd></dl>
+            <dl class="detail-item"><dt>Installed Version</dt><dd id="update-installed">{_escape(snapshot.installed_version)}</dd></dl>
+            <dl class="detail-item"><dt>Latest Version</dt><dd id="update-latest">{_escape(snapshot.latest_version or "-")}</dd></dl>
+            <dl class="detail-item"><dt>Release Name</dt><dd id="update-release-name">{_escape(snapshot.latest_release_name or "-")}</dd></dl>
+            <dl class="detail-item"><dt>Release Page</dt><dd>{release_link}</dd></dl>
+            <dl class="detail-item"><dt>Check Interval</dt><dd id="update-interval">{_escape(update_interval_label(snapshot.check_interval))}</dd></dl>
             <dl class="detail-item"><dt>Last Check</dt><dd id="update-checked">{_escape(_format_time(snapshot.checked_at))}</dd></dl>
           </div>
           <p id="update-message" class="muted">{_escape(snapshot.error)}</p>
@@ -1089,7 +1126,7 @@ def render_updates_page(snapshot: UpdateSnapshot) -> str:
           <div class="section-head">
             <div>
               <h2>Update Progress</h2>
-              <p class="muted">Install uses a fast-forward-only git update, reinstalls PUG, then restarts the systemd service.</p>
+              <p class="muted">Update detection uses GitLab Releases. Install uses the local checkout, reinstalls PUG, then restarts the systemd service.</p>
             </div>
           </div>
           <pre id="update-output" class="log-view">{output or 'No update activity yet.'}</pre>
@@ -1098,10 +1135,11 @@ def render_updates_page(snapshot: UpdateSnapshot) -> str:
         (() => {{
           const fields = {{
             pill: document.getElementById("update-status-pill"),
-            current: document.getElementById("update-current"),
+            installed: document.getElementById("update-installed"),
             latest: document.getElementById("update-latest"),
-            branch: document.getElementById("update-branch"),
-            remote: document.getElementById("update-remote"),
+            releaseName: document.getElementById("update-release-name"),
+            releaseLink: document.getElementById("update-release-link"),
+            interval: document.getElementById("update-interval"),
             checked: document.getElementById("update-checked"),
             message: document.getElementById("update-message"),
             output: document.getElementById("update-output"),
@@ -1109,14 +1147,17 @@ def render_updates_page(snapshot: UpdateSnapshot) -> str:
           }};
           const text = (value, fallback = "-") => value === null || value === undefined || value === "" ? fallback : String(value);
           const formatTime = (value) => text(value).replace("T", " ").replace("+00:00", " UTC");
+          const intervalLabel = (value) => value === "off" ? "off" : value === "1d" ? "1 day" : "7 days";
           const update = (payload) => {{
             const installing = payload.status === "installing";
             fields.pill.textContent = text(payload.status, "idle").replace(/^./, c => c.toUpperCase());
             fields.pill.className = `health ${{payload.update_available ? "warn" : "ok"}}`;
-            fields.current.textContent = text(payload.current_commit);
-            fields.latest.textContent = text(payload.latest_commit);
-            fields.branch.textContent = text(payload.branch);
-            fields.remote.textContent = text(payload.remote);
+            fields.installed.textContent = text(payload.installed_version);
+            fields.latest.textContent = text(payload.latest_version);
+            fields.releaseName.textContent = text(payload.latest_release_name);
+            fields.releaseLink.textContent = text(payload.latest_release_url);
+            if (payload.latest_release_url) fields.releaseLink.href = payload.latest_release_url;
+            fields.interval.textContent = intervalLabel(payload.check_interval);
             fields.checked.textContent = formatTime(payload.checked_at);
             fields.message.textContent = text(payload.error, "");
             fields.output.textContent = payload.output && payload.output.length ? payload.output.join("\\n") : "No update activity yet.";
@@ -1544,6 +1585,21 @@ def render_config_form(config: AppConfig) -> str:
       <label>Log file path <input name="logging_file_path" value="{_escape(config.logging.file_path)}"></label>
       <label>apcupsd events path <input name="logging_apcupsd_events_path" value="{_escape(config.logging.apcupsd_events_path)}"></label>
       <label>Web log tail lines <input name="logging_web_tail_lines" type="number" min="1" value="{config.logging.web_tail_lines}"></label>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Updates</legend>
+    <div class="grid">
+      <label>GitLab base URL <input name="update_gitlab_base_url" value="{_escape(config.update.gitlab_base_url)}"></label>
+      <label>GitLab project path <input name="update_project_path" value="{_escape(config.update.project_path)}"></label>
+      <label>Release check interval
+        <select name="update_check_interval">
+          <option value="off"{_selected(config.update.check_interval, "off")}>off</option>
+          <option value="1d"{_selected(config.update.check_interval, "1d")}>1 day</option>
+          <option value="7d"{_selected(config.update.check_interval, "7d")}>7 days</option>
+        </select>
+      </label>
     </div>
   </fieldset>
 

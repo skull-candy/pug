@@ -127,8 +127,8 @@ def test_dashboard_has_modern_sections_and_no_settings_form() -> None:
     assert '<meta http-equiv="refresh" content="30">' not in page
     assert "Administration" in page
     assert "Developed By: Ahsan Muhammad" in page
-    assert "Version 0.1.1" in page
-    assert "New PUG version available." in page
+    assert "Version 0.1.2" in page
+    assert 'id="update-banner-text"' in page
     assert "Line / AVR path active" in page
     assert "Line / AVR" in page
     assert "Bypass Path" in page
@@ -184,6 +184,9 @@ def test_settings_page_contains_configuration_form() -> None:
     assert "Republish Discovery" in page
     assert "/homeassistant/rediscover" in page
     assert "restarts the service" in page
+    assert "GitLab base URL" in page
+    assert "GitLab project path" in page
+    assert "7 days" in page
 
 
 def test_config_save_restart_is_scheduled(monkeypatch) -> None:
@@ -208,10 +211,20 @@ def test_config_save_restart_is_scheduled(monkeypatch) -> None:
 
 
 def test_updates_page_contains_check_and_install_actions() -> None:
-    page = render_updates_page(UpdateSnapshot(status="available", update_available=True, current_commit="abc", latest_commit="def"))
+    page = render_updates_page(
+        UpdateSnapshot(
+            status="available",
+            update_available=True,
+            latest_version="v1.0.0",
+            latest_release_url="https://git.vns.ae/ahsan/pug/-/releases/v1.0.0",
+            latest_release_name="PUG v1.0.0",
+        )
+    )
 
     assert "Updates" in page
-    assert "https://git.vns.ae/ahsan/pug" in page
+    assert "GitLab Releases" in page
+    assert "Latest Version" in page
+    assert "v1.0.0" in page
     assert "Check for Update" in page
     assert "Download and Install" in page
     assert "/api/updates/check" in page

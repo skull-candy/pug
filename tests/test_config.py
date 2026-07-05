@@ -18,6 +18,9 @@ def test_load_config_reads_project_example() -> None:
     assert config.diagnostics.self_test_command == ["apctest"]
     assert config.diagnostics.self_test_selection == "2"
     assert config.diagnostics.battery_calibration_selection == "10"
+    assert config.update.gitlab_base_url == "https://git.vns.ae"
+    assert config.update.project_path == "ahsan/pug"
+    assert config.update.check_interval == "7d"
 
 
 def test_config_rejects_invalid_snmp_port() -> None:
