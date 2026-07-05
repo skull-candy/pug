@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "powerpi-ups-gateway"
-version = "0.1.5"
+version = "0.1.6"
 description = "Universal UPS protocol gateway for Raspberry Pi/Linux, initially exposing apcupsd state as APC-compatible SNMP."
 readme = "README.md"
 requires-python = ">=3.11"

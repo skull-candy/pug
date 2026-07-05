@@ -4,6 +4,7 @@ from pug.diagnostics import DiagnosticSnapshot
 from pug.frontends.homeassistant import discovery_payloads
 from pug.frontends.http import (
     config_from_form,
+    control_apcupsd_service,
     display_label,
     display_value,
     power_flow_mode,
@@ -127,7 +128,7 @@ def test_dashboard_has_modern_sections_and_no_settings_form() -> None:
     assert '<meta http-equiv="refresh" content="30">' not in page
     assert "Administration" in page
     assert "Developed By: Ahsan Muhammad" in page
-    assert "Version 0.1.5" in page
+    assert "Version 0.1.6" in page
     assert 'id="update-banner-text"' in page
     assert "Line / AVR path active" in page
     assert "Line / AVR" in page
@@ -187,6 +188,8 @@ def test_settings_page_contains_configuration_form() -> None:
     assert "Self test command" in page
     assert "Republish Discovery" in page
     assert "/homeassistant/rediscover" in page
+    assert "apcupsd Service" in page
+    assert "/api/service/apcupsd" in page
     assert "restarts the service" in page
     assert "Server timezone" in page
     assert "GitLab base URL" in page
@@ -213,6 +216,26 @@ def test_config_save_restart_is_scheduled(monkeypatch) -> None:
     schedule_service_restart()
 
     assert calls == [(fake_restart, "config-service-restarter", True), "started"]
+
+
+def test_apcupsd_service_control_runs_systemctl(monkeypatch) -> None:
+    calls = []
+
+    class Result:
+        returncode = 0
+        stdout = "ok"
+        stderr = ""
+
+    def fake_run(command, capture_output, text, timeout):
+        calls.append((command, capture_output, text, timeout))
+        return Result()
+
+    monkeypatch.setattr("pug.frontends.http.subprocess.run", fake_run)
+
+    result = control_apcupsd_service("restart")
+
+    assert result["ok"] is True
+    assert calls == [(["systemctl", "restart", "apcupsd"], True, True, 60)]
 
 
 def test_updates_page_contains_check_and_install_actions() -> None:
@@ -265,6 +288,8 @@ def test_diagnostics_page_shows_actions_live_status_and_result() -> None:
     assert 'data-action="self_test"' in page
     assert 'data-action="battery_calibration"' in page
     assert "/api/diagnostics/start" in page
+    assert "/api/diagnostics/abort" in page
+    assert "Abort Diagnostic" in page
     assert "Monitoring is unavailable while these diagnostics run" in page
     assert "Self Test Result" in page
     assert "Test Result" in page

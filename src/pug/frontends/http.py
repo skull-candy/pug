@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import subprocess
 from datetime import datetime, timedelta, timezone
 from importlib.resources import files
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -192,6 +193,28 @@ class HttpFrontend:
                     except ValueError as exc:
                         self._send_json({"ok": False, "message": str(exc)}, status=400)
                     return
+                if self.path == "/api/diagnostics/abort":
+                    aborted = frontend.diagnostics.abort()
+                    self._send_json(
+                        {
+                            "ok": aborted,
+                            "message": "Diagnostic abort requested." if aborted else "No diagnostic is running.",
+                            "diagnostic": frontend.diagnostics.snapshot().to_dict(),
+                        },
+                        status=200 if aborted else 400,
+                    )
+                    return
+                if self.path == "/api/service/apcupsd":
+                    length = int(self.headers.get("Content-Length", "0"))
+                    body = self.rfile.read(length).decode("utf-8")
+                    form = parse_qs(body, keep_blank_values=True)
+                    try:
+                        result = control_apcupsd_service(_field(form, "action"))
+                    except ValueError as exc:
+                        self._send_json({"ok": False, "message": str(exc)}, status=400)
+                        return
+                    self._send_json(result, status=200 if result["ok"] else 502)
+                    return
                 if self.path == "/api/updates/check":
                     self._send_json(frontend.updater.check().to_dict())
                     return
@@ -271,6 +294,21 @@ class HttpFrontend:
 
 def schedule_service_restart() -> None:
     Thread(target=restart_service_later, name="config-service-restarter", daemon=True).start()
+
+
+def control_apcupsd_service(action: str) -> dict[str, Any]:
+    if action not in {"start", "stop", "restart"}:
+        raise ValueError("unsupported apcupsd service action")
+    command = ["systemctl", action, "apcupsd"]
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        LOGGER.info("apcupsd service %s failed: %s", action, exc)
+        return {"ok": False, "message": str(exc), "action": action}
+    message = result.stderr.strip() or result.stdout.strip() or f"apcupsd {action} command completed."
+    if result.returncode != 0:
+        LOGGER.info("apcupsd service %s returned %s: %s", action, result.returncode, message)
+    return {"ok": result.returncode == 0, "message": message, "action": action, "return_code": result.returncode}
 
 
 def config_from_form(form: dict[str, list[str]], current_config: AppConfig | None = None) -> AppConfig:
@@ -1042,6 +1080,18 @@ def render_settings_page(config: AppConfig) -> str:
             <button id="ha-rediscover" class="button secondary" type="button">Republish Discovery</button>
           </div>
           <p id="ha-rediscover-status" class="muted"></p>
+          <div class="section-head" style="margin-top:18px;">
+            <div>
+              <h2>apcupsd Service</h2>
+              <p class="muted">Start, stop, or restart the local apcupsd systemd service.</p>
+            </div>
+          </div>
+          <div class="actions">
+            <button class="button secondary apcupsd-service" type="button" data-action="start">Start</button>
+            <button class="button secondary apcupsd-service" type="button" data-action="stop">Stop</button>
+            <button class="button secondary apcupsd-service" type="button" data-action="restart">Restart</button>
+          </div>
+          <p id="apcupsd-service-status" class="muted"></p>
           <script>
           (() => {{
             const button = document.getElementById("ha-rediscover");
@@ -1060,6 +1110,28 @@ def render_settings_page(config: AppConfig) -> str:
                 button.disabled = false;
               }}
             }});
+            const serviceStatus = document.getElementById("apcupsd-service-status");
+            const serviceButtons = Array.from(document.querySelectorAll(".apcupsd-service"));
+            serviceButtons.forEach((serviceButton) => serviceButton.addEventListener("click", async () => {{
+              const action = serviceButton.dataset.action;
+              if (!confirm(`${{action[0].toUpperCase() + action.slice(1)}} apcupsd service?`)) return;
+              serviceButtons.forEach((item) => item.disabled = true);
+              serviceStatus.textContent = `${{action}} apcupsd...`;
+              try {{
+                const body = new URLSearchParams({{ action }});
+                const response = await fetch("/api/service/apcupsd", {{
+                  method: "POST",
+                  headers: {{ "Content-Type": "application/x-www-form-urlencoded" }},
+                  body,
+                }});
+                const payload = await response.json();
+                serviceStatus.textContent = payload.message || (payload.ok ? "apcupsd command completed." : "apcupsd command failed.");
+              }} catch (error) {{
+                serviceStatus.textContent = String(error);
+              }} finally {{
+                serviceButtons.forEach((item) => item.disabled = false);
+              }}
+            }}));
           }})();
           </script>
         </section>
@@ -1230,7 +1302,7 @@ def diagnostic_summary(state: dict[str, Any], diagnostic: DiagnosticSnapshot) ->
             stage = "Calibration running"
         else:
             stage = "Preparing"
-    elif diagnostic.status in {"completed", "failed"}:
+    elif diagnostic.status in {"completed", "failed", "aborted"}:
         stage = diagnostic.status.title()
     last_event = "-"
     for line in reversed(diagnostic.output):
@@ -1302,6 +1374,7 @@ def render_diagnostics_page(state: dict[str, Any], config: AppConfig, diagnostic
           <div class="actions">
             <button id="start-self-test" type="button" data-action="self_test"{' disabled' if busy else ''}>Start Self Test</button>
             <button id="start-calibration" class="danger" type="button" data-action="battery_calibration"{' disabled' if busy else ''}>Start Battery Calibration</button>
+            <button id="abort-diagnostic" class="danger" type="button"{'' if busy else ' disabled'}>Abort Diagnostic</button>
           </div>
         </section>
         <section>
@@ -1360,12 +1433,16 @@ def render_diagnostics_page(state: dict[str, Any], config: AppConfig, diagnostic
             document.getElementById("start-self-test"),
             document.getElementById("start-calibration"),
           ];
+          const abortButton = document.getElementById("abort-diagnostic");
           const text = (value, fallback = "-") => {{
             if (value === null || value === undefined || value === "") return fallback;
             return String(value);
           }};
           const formatTime = (value) => text(value).replace("T", " ").replace("+00:00", " UTC");
-          const setBusy = (busy) => buttons.forEach((button) => button.disabled = busy);
+          const setBusy = (busy) => {{
+            buttons.forEach((button) => button.disabled = busy);
+            abortButton.disabled = !busy;
+          }};
           const update = (payload) => {{
             const state = payload.state || {{}};
             const raw = state.raw || {{}};
@@ -1408,6 +1485,14 @@ def render_diagnostics_page(state: dict[str, Any], config: AppConfig, diagnostic
             await refresh();
           }};
           buttons.forEach((button) => button.addEventListener("click", () => start(button.dataset.action)));
+          abortButton.addEventListener("click", async () => {{
+            if (!confirm("Abort the running diagnostic?\\n\\nPUG will send ENTER to apctest and restore apcupsd monitoring.")) return;
+            abortButton.disabled = true;
+            const response = await fetch("/api/diagnostics/abort", {{ method: "POST" }});
+            const payload = await response.json();
+            if (!payload.ok) alert(payload.message || "Unable to abort diagnostic.");
+            await refresh();
+          }});
           document.getElementById("refresh-diagnostics").addEventListener("click", refresh);
           fields.logToggle.addEventListener("change", () => {{
             fields.output.classList.toggle("hidden", !fields.logToggle.checked);

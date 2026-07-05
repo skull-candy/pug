@@ -49,3 +49,5 @@ This project follows the spirit of Keep a Changelog. Update this file for every 
 - Restored UPS Details text sizing while keeping compact row padding and made the manual update check button force a GitLab Releases check.
 - Bumped the application version to `0.1.4`.
 - Bumped the application version to `0.1.5` for the Git tag and release refresh.
+- Added diagnostic abort support, kept battery calibration stdin open for apctest progress/abort tracking, restored apcupsd after abort, and added Settings controls for starting, stopping, and restarting apcupsd.
+- Bumped the application version to `0.1.6`.

@@ -19,7 +19,7 @@ When enabled, the HTTP frontend serves:
 
 The Web UI at `/ui` is a dashboard with metric cards, a mode-aware animated power-flow diagram, UPS details, and raw backend stats. Dashboard remains the only top-level navigation item; Raw Stats, Diagnostics, Settings, Logs, Updates, and Metrics are grouped under Administration. The dashboard, raw stats page, logs page, and diagnostics page poll small internal endpoints so live UPS data updates without full page reloads. The diagram highlights line/AVR mode when the UPS is online and input/output voltage are close, battery mode when on battery, bypass mode when status reports bypass, and conversion mode when online with a meaningful input/output voltage difference.
 
-The diagnostics page at `/diagnostics` can start one apcupsd diagnostic command at a time without reloading the page. By default it stops `apcupsd`, runs `apctest` with menu selection `2` for self-test or `10` for battery calibration, then starts `apcupsd` again. It shows running/completed/failed status, the latest UPS status values, and captured command output. Monitoring is unavailable while `apcupsd` is stopped. Battery calibration may discharge the UPS for an extended period; configure wrapper commands if the target host needs different service control or sudo.
+The diagnostics page at `/diagnostics` can start one apcupsd diagnostic command at a time without reloading the page. By default it stops `apcupsd`, runs `apctest` with menu selection `2` for self-test or `10` for battery calibration, then starts `apcupsd` again. It shows running/completed/failed/aborted status, the latest UPS status values, and captured command output. Battery calibration keeps the apctest input pipe open so the Web UI abort button can send Enter, terminate the diagnostic if needed, and restore apcupsd monitoring. Monitoring is unavailable while `apcupsd` is stopped. Battery calibration may discharge the UPS for an extended period; configure wrapper commands if the target host needs different service control or sudo.
 
 The settings page at `/settings` includes a configuration form for:
 
@@ -30,6 +30,7 @@ The settings page at `/settings` includes a configuration form for:
 - Logging level and display timezone.
 - Log file path and log tail line count.
 - GitLab Releases update source and check interval.
+- apcupsd service start, stop, and restart controls.
 - Diagnostics preparation/restore commands, apctest menu selections, and command timeout.
 
 Saving the form writes `config.yaml` and restarts the `powerpi-ups-gateway` service to apply backend, listener, SNMP, and MQTT runtime changes.
