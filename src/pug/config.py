@@ -55,6 +55,7 @@ class LoggingConfig:
     file_path: str = "/var/log/pug/pug.log"
     apcupsd_events_path: str = "/var/log/apcupsd.events"
     web_tail_lines: int = 300
+    timezone: str = "UTC"
 
 
 @dataclass(frozen=True)
@@ -147,6 +148,7 @@ def config_from_mapping(data: dict[str, Any]) -> AppConfig:
             file_path=str(logging.get("file_path", "/var/log/pug/pug.log")),
             apcupsd_events_path=str(logging.get("apcupsd_events_path", "/var/log/apcupsd.events")),
             web_tail_lines=int(logging.get("web_tail_lines", 300)),
+            timezone=str(logging.get("timezone", "UTC")),
         ),
         diagnostics=DiagnosticsConfig(
             before_command=list(diagnostics.get("before_command", ["systemctl", "stop", "apcupsd"])),
@@ -204,6 +206,8 @@ def validate_config(config: AppConfig) -> None:
         raise ConfigError("mqtt.publish_interval_seconds must be greater than zero")
     if config.logging.web_tail_lines <= 0:
         raise ConfigError("logging.web_tail_lines must be greater than zero")
+    if not config.logging.timezone:
+        raise ConfigError("logging.timezone must not be empty")
     if not config.diagnostics.self_test_command:
         raise ConfigError("diagnostics.self_test_command must not be empty")
     if not config.diagnostics.self_test_selection:

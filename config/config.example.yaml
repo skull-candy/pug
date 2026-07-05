@@ -34,6 +34,7 @@ logging:
   file_path: "/var/log/pug/pug.log"
   apcupsd_events_path: "/var/log/apcupsd.events"
   web_tail_lines: 300
+  timezone: "UTC"
 
 diagnostics:
   before_command: ["systemctl", "stop", "apcupsd"]

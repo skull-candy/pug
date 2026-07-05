@@ -27,7 +27,7 @@ The settings page at `/settings` includes a configuration form for:
 - SNMP enablement, listen address, port, community, and developer logging.
 - REST API, Prometheus, and Home Assistant endpoint toggles.
 - MQTT enablement, broker, topics, credentials, and publish interval.
-- Logging level.
+- Logging level and display timezone.
 - Log file path and log tail line count.
 - GitLab Releases update source and check interval.
 - Diagnostics preparation/restore commands, apctest menu selections, and command timeout.

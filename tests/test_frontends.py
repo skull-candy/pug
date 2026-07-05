@@ -127,7 +127,7 @@ def test_dashboard_has_modern_sections_and_no_settings_form() -> None:
     assert '<meta http-equiv="refresh" content="30">' not in page
     assert "Administration" in page
     assert "Developed By: Ahsan Muhammad" in page
-    assert "Version 0.1.2" in page
+    assert "Version 0.1.3" in page
     assert 'id="update-banner-text"' in page
     assert "Line / AVR path active" in page
     assert "Line / AVR" in page
@@ -139,6 +139,8 @@ def test_dashboard_has_modern_sections_and_no_settings_form() -> None:
     assert "Output Voltage" in page
     assert "compact-details" in page
     assert "gap: 0" in page
+    assert "padding:1px 2px" in page
+    assert "metric-icon" not in page
     assert "Self Test" not in page
     assert "/assets/ups-icons/input.png" in page
     assert "/assets/ups-icons/avr.png" in page
@@ -184,6 +186,7 @@ def test_settings_page_contains_configuration_form() -> None:
     assert "Republish Discovery" in page
     assert "/homeassistant/rediscover" in page
     assert "restarts the service" in page
+    assert "Server timezone" in page
     assert "GitLab base URL" in page
     assert "GitLab project path" in page
     assert "7 days" in page
@@ -275,6 +278,7 @@ def test_display_helpers_are_human_friendly() -> None:
     assert display_label("runtime_minutes") == "Runtime Remaining"
     assert display_value("runtime_minutes", 39) == "39 min"
     assert display_value("online", True) == "Yes"
+    assert display_value("last_update", "2026-07-05T08:00:00+00:00", "Asia/Dubai") == "2026-07-05 12:00:00 Asia/Dubai"
     assert raw_display_label("LASTXFER") == "Last Transfer Reason"
 
 
@@ -283,11 +287,20 @@ def test_power_flow_mode_reflects_ups_state() -> None:
     battery_state = simulator_state().updated(online=False, on_battery=True).to_dict()
     bypass_state = simulator_state().updated(status_text="BYPASS", raw={"STATUS": "BYPASS"}).to_dict()
     conversion_state = simulator_state().updated(online=True, input_voltage=210.0, output_voltage=230.0).to_dict()
+    input_lost_state = simulator_state().updated(online=True, input_voltage=0.0, output_voltage=230.0).to_dict()
 
     assert power_flow_mode(line_state) == "line"
     assert power_flow_mode(battery_state) == "battery"
     assert power_flow_mode(bypass_state) == "bypass"
     assert power_flow_mode(conversion_state) == "online_conversion"
+    assert power_flow_mode(input_lost_state) == "battery"
+
+
+def test_power_flow_diagram_marks_charging_battery_path_green() -> None:
+    state = simulator_state().updated(online=True, on_battery=False, battery_charge_percent=95).to_dict()
+    page = render_control_page(state, AppConfig())
+
+    assert "green-active" in page
 
 
 def test_config_form_can_disable_methods() -> None:
@@ -329,6 +342,7 @@ def test_config_form_can_disable_methods() -> None:
     assert config.mqtt.enabled is False
     assert config.diagnostics.before_command == ["systemctl", "stop", "apcupsd"]
     assert config.diagnostics.self_test_selection == "2"
+    assert config.logging.timezone == "UTC"
 
 
 def test_config_save_round_trip(tmp_path) -> None:

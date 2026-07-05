@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from importlib.resources import files
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from threading import Event, Thread
 from typing import Any
 from urllib.parse import parse_qs
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pug import __version__
 from pug.config import (
@@ -128,7 +129,7 @@ class HttpFrontend:
                         render_raw_stats_page(state.to_dict(), config).encode(),
                     )
                 elif self.path == "/ui/live/dashboard":
-                    self._send_json(dashboard_live_payload(state.to_dict()))
+                    self._send_json(dashboard_live_payload(state.to_dict(), config))
                 elif self.path == "/ui/live/raw":
                     self._send_json(raw_live_payload(state.to_dict()))
                 elif self.path == "/ui/live/logs":
@@ -275,6 +276,7 @@ def schedule_service_restart() -> None:
 
 def config_from_form(form: dict[str, list[str]], current_config: AppConfig | None = None) -> AppConfig:
     update_defaults = current_config.update if current_config else UpdateConfig()
+    logging_defaults = current_config.logging if current_config else LoggingConfig()
     update_gitlab_base_url = _field(form, "update_gitlab_base_url") or update_defaults.gitlab_base_url
     update_project_path = _field(form, "update_project_path") or update_defaults.project_path
     if update_gitlab_base_url != update_defaults.gitlab_base_url or update_project_path != update_defaults.project_path:
@@ -316,6 +318,7 @@ def config_from_form(form: dict[str, list[str]], current_config: AppConfig | Non
             file_path=_field(form, "logging_file_path"),
             apcupsd_events_path=_field(form, "logging_apcupsd_events_path"),
             web_tail_lines=int(_field(form, "logging_web_tail_lines")),
+            timezone=_field(form, "logging_timezone") or logging_defaults.timezone,
         ),
         diagnostics=DiagnosticsConfig(
             before_command=parse_command(_field(form, "diagnostics_before_command")),
@@ -378,6 +381,7 @@ def config_to_public_dict(config: AppConfig) -> dict[str, Any]:
             "file_path": config.logging.file_path,
             "apcupsd_events_path": config.logging.apcupsd_events_path,
             "web_tail_lines": config.logging.web_tail_lines,
+            "timezone": config.logging.timezone,
         },
         "diagnostics": {
             "before_command": config.diagnostics.before_command,
@@ -404,15 +408,15 @@ def diagnostics_api_payload(state: dict[str, Any], diagnostic: DiagnosticSnapsho
     return {"state": state, "diagnostic": diagnostic.to_dict(), "summary": diagnostic_summary(state, diagnostic)}
 
 
-def dashboard_live_payload(state: dict[str, Any]) -> dict[str, str]:
+def dashboard_live_payload(state: dict[str, Any], config: AppConfig) -> dict[str, str]:
     return {
         "title": str(state.get("name", "PowerPi UPS")),
-        "status": display_value("status_text", state.get("status_text", "-")),
+        "status": display_value("status_text", state.get("status_text", "-"), config.logging.timezone),
         "health_text": "Healthy" if state.get("online") else "Attention",
         "health_class": "ok" if state.get("online") else "warn",
         "overview": render_overview_cards(state),
         "diagram": render_power_flow_diagram(state),
-        "details": render_detail_rows(state),
+        "details": render_detail_rows(state, config.logging.timezone),
     }
 
 
@@ -444,7 +448,7 @@ def render_control_page(state: dict[str, Any], config: AppConfig) -> str:
 
 def render_dashboard_page(state: dict[str, Any], config: AppConfig) -> str:
     title = _escape(str(state["name"]))
-    rows = render_detail_rows(state)
+    rows = render_detail_rows(state, config.logging.timezone)
     overview = render_overview_cards(state)
     diagram = render_power_flow_diagram(state)
     return page_shell(
@@ -455,7 +459,7 @@ def render_dashboard_page(state: dict[str, Any], config: AppConfig) -> str:
           <div class="hero-head">
             <div>
               <h1 id="dashboard-title">{title}</h1>
-              <p id="dashboard-status" class="muted">{_escape(display_value("status_text", state.get("status_text", "-")))}</p>
+              <p id="dashboard-status" class="muted">{_escape(display_value("status_text", state.get("status_text", "-"), config.logging.timezone))}</p>
             </div>
             <span id="dashboard-health" class="health {'ok' if state.get('online') else 'warn'}">{'Healthy' if state.get('online') else 'Attention'}</span>
           </div>
@@ -491,7 +495,8 @@ def render_dashboard_page(state: dict[str, Any], config: AppConfig) -> str:
             document.getElementById("dashboard-diagram").innerHTML = payload.diagram;
             document.getElementById("dashboard-details").innerHTML = payload.details;
           }};
-          setInterval(refresh, 3000);
+          refresh();
+          setInterval(refresh, 1000);
         }})();
         </script>
         """,
@@ -583,15 +588,15 @@ def page_shell(title: str, active: str, content: str, auto_refresh: bool = False
     .metric {{ min-width:0; }}
     .metric-label {{ color:#344054; font-size:13px; margin-bottom:6px; }}
     .metric-value {{ font-weight:800; font-size:17px; color:#101828; overflow-wrap:anywhere; }}
-    .metric-icon {{ display:inline-flex; width:20px; height:20px; margin-right:7px; vertical-align:-4px; }}
-    .metric-icon img {{ display:block; width:20px; height:20px; object-fit:contain; }}
     .diagram-wrap {{ padding: 18px 0 2px; }}
     .diagram-card {{ border:1px solid #e1e7ef; border-radius:8px; background:#fff; padding:12px; overflow:hidden; }}
+    .diagram-card.on-battery {{ background:#fff1f2; border-color:#fecdd3; }}
     svg.power {{ display:block; width:100%; height:auto; }}
     svg.power.mobile {{ display:none; }}
     .path {{ stroke:#d8dee8; stroke-width:5; fill:none; stroke-linecap:round; stroke-linejoin:round; }}
     .path.active {{ stroke:var(--blue); stroke-dasharray:none; filter: drop-shadow(0 1px 3px rgba(7,94,181,.22)); }}
     .path.bypass-active {{ stroke:var(--good); }}
+    .path.green-active {{ stroke:var(--good); stroke-dasharray:none; filter: drop-shadow(0 1px 3px rgba(22,163,74,.22)); }}
     .path.standby {{ stroke:#c8d1dd; stroke-dasharray:9 9; opacity:.82; }}
     .path.inactive {{ stroke:#e3e8f0; stroke-dasharray:8 10; opacity:.9; }}
     .arrow {{ fill:var(--blue); }}
@@ -599,6 +604,7 @@ def page_shell(title: str, active: str, content: str, auto_refresh: bool = False
     .node {{ fill:#fff; stroke:#98a2b3; stroke-width:2.5; }}
     .node.active {{ stroke:var(--blue); filter: drop-shadow(0 2px 6px rgba(7,94,181,.18)); }}
     .node.bypass-active {{ stroke:var(--good); filter: drop-shadow(0 2px 6px rgba(22,163,74,.18)); }}
+    .node.green-active {{ stroke:var(--good); filter: drop-shadow(0 2px 6px rgba(22,163,74,.18)); }}
     .node-fill {{ fill:#98a2b3; }}
     .node-fill.active {{ fill:var(--blue2); }}
     .node-fill.bypass-active {{ fill:var(--good); }}
@@ -622,9 +628,9 @@ def page_shell(title: str, active: str, content: str, auto_refresh: bool = False
     .detail-item dt {{ color:var(--muted); font-size:12px; line-height:1.25; }}
     .detail-item dd {{ margin:3px 0 0; font-weight:700; line-height:1.25; overflow-wrap:anywhere; }}
     .compact-details {{ grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 0; }}
-    .compact-details .detail-item {{ min-height:0; padding:3px 6px; border-radius:0; }}
-    .compact-details .detail-item dt {{ font-size:11px; line-height:1.15; }}
-    .compact-details .detail-item dd {{ margin-top:1px; font-size:13px; line-height:1.15; font-weight:700; }}
+    .compact-details .detail-item {{ min-height:0; padding:1px 2px; border-radius:0; }}
+    .compact-details .detail-item dt {{ font-size:10px; line-height:1.05; }}
+    .compact-details .detail-item dd {{ margin-top:0; font-size:12px; line-height:1.05; font-weight:700; }}
     table {{ border-collapse: collapse; width: 100%; }}
     th, td {{ border-bottom: 1px solid #edf1f5; padding: .55rem; text-align: left; vertical-align:top; }}
     th {{ width: 18rem; color: #57606a; font-weight: 700; }}
@@ -721,33 +727,35 @@ def render_overview_cards(state: dict[str, Any]) -> str:
         ("Output Voltage", "output_voltage", display_value("output_voltage", state.get("output_voltage"))),
     ]
     html = []
-    for label, icon_key, value in cards:
+    for label, _icon_key, value in cards:
         html.append(
             f'<div class="metric"><div class="metric-label">{_escape(label)}</div>'
-            f'<div class="metric-value"><span class="metric-icon">{metric_icon(icon_key)}</span>{_escape(str(value))}</div></div>'
+            f'<div class="metric-value">{_escape(str(value))}</div></div>'
         )
     return '<div class="cards">' + "".join(html) + "</div>"
 
 
 def render_power_flow_diagram(state: dict[str, Any]) -> str:
     mode = power_flow_mode(state)
+    battery_not_full = numeric_value(state.get("battery_charge_percent")) is not None and numeric_value(state.get("battery_charge_percent")) < 100
+    battery_path_green = mode == "battery" or battery_not_full
     line_active = " active" if mode in {"line", "online_conversion"} else " inactive"
-    battery_active = " active" if mode == "battery" else " inactive"
+    battery_active = " green-active" if battery_path_green else " inactive"
     bypass_active = " bypass-active" if mode == "bypass" else " standby"
     inverter_active = " active" if mode in {"line", "battery", "online_conversion"} else " inactive"
     avr_active = " active" if mode in {"line", "online_conversion"} else " standby"
     input_node = line_active if mode in {"line", "online_conversion"} else bypass_active if mode == "bypass" else " inactive"
     input_icon = "" if mode in {"line", "online_conversion", "bypass"} else " muted"
     avr_icon = "" if mode in {"line", "online_conversion"} else " muted"
-    battery_icon = "" if mode == "battery" else " muted"
+    battery_icon = "" if battery_path_green else " muted"
     inverter_icon = "" if mode in {"line", "battery", "online_conversion"} else " muted"
     load_icon = " good" if mode == "bypass" else inverter_icon
     line_marker = "arrow-blue" if mode in {"line", "online_conversion"} else "arrow-muted"
-    battery_marker = "arrow-blue" if mode == "battery" else "arrow-muted"
+    battery_marker = "arrow-green" if battery_path_green else "arrow-muted"
     inverter_marker = "arrow-blue" if mode in {"line", "battery", "online_conversion"} else "arrow-muted"
     bypass_marker = "arrow-green" if mode == "bypass" else "arrow-muted"
     mobile_line_marker = "m-arrow-blue" if mode in {"line", "online_conversion"} else "m-arrow-muted"
-    mobile_battery_marker = "m-arrow-blue" if mode == "battery" else "m-arrow-muted"
+    mobile_battery_marker = "m-arrow-green" if battery_path_green else "m-arrow-muted"
     mobile_inverter_marker = "m-arrow-blue" if mode in {"line", "battery", "online_conversion"} else "m-arrow-muted"
     mobile_bypass_marker = "m-arrow-green" if mode == "bypass" else "m-arrow-muted"
     input_v = display_value("input_voltage", state.get("input_voltage"))
@@ -765,7 +773,7 @@ def render_power_flow_diagram(state: dict[str, Any]) -> str:
     }[mode]
     return f"""
     <div class="diagram-wrap">
-      <div class="diagram-card">
+      <div class="diagram-card{' on-battery' if mode == 'battery' else ''}">
         <svg class="power desktop" viewBox="0 0 1040 430" role="img" aria-label="UPS power flow diagram">
           <defs>
             <marker id="arrow-blue" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
@@ -903,6 +911,8 @@ def power_flow_mode(state: dict[str, Any]) -> str:
     status = f"{state.get('status_text', '')} {state.get('raw', {}).get('STATUS', '')}".upper()
     if "BYPASS" in status:
         return "bypass"
+    if input_power_lost(state):
+        return "battery"
     if state.get("on_battery"):
         return "battery"
     if state.get("online") and voltages_close(state.get("input_voltage"), state.get("output_voltage")):
@@ -912,6 +922,19 @@ def power_flow_mode(state: dict[str, Any]) -> str:
     return "unknown"
 
 
+def input_power_lost(state: dict[str, Any]) -> bool:
+    input_voltage = numeric_value(state.get("input_voltage"))
+    output_voltage = numeric_value(state.get("output_voltage"))
+    return input_voltage is not None and input_voltage <= 1.0 and (output_voltage is None or output_voltage > 1.0)
+
+
+def numeric_value(value: Any) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def voltages_close(input_voltage: Any, output_voltage: Any, tolerance: float = 5.0) -> bool:
     try:
         return abs(float(input_voltage) - float(output_voltage)) <= tolerance
@@ -919,7 +942,7 @@ def voltages_close(input_voltage: Any, output_voltage: Any, tolerance: float = 5
         return False
 
 
-def render_detail_rows(state: dict[str, Any]) -> str:
+def render_detail_rows(state: dict[str, Any], timezone_name: str = "UTC") -> str:
     preferred = [
         "manufacturer",
         "model",
@@ -947,7 +970,7 @@ def render_detail_rows(state: dict[str, Any]) -> str:
     keys = [key for key in preferred if key in state]
     keys.extend(key for key in state if key not in keys and key != "raw")
     return "".join(
-        f'<dl class="detail-item"><dt>{_escape(display_label(key))}</dt><dd>{_escape(display_value(key, state.get(key)))}</dd></dl>'
+        f'<dl class="detail-item"><dt>{_escape(display_label(key))}</dt><dd>{_escape(display_value(key, state.get(key), timezone_name))}</dd></dl>'
         for key in keys
     )
 
@@ -1248,8 +1271,8 @@ def render_diagnostic_summary_cards(summary: dict[str, str]) -> str:
 def render_diagnostics_page(state: dict[str, Any], config: AppConfig, diagnostic: DiagnosticSnapshot) -> str:
     output = "\n".join(_escape(line.rstrip("\n")) for line in diagnostic.output)
     action = diagnostic_label(diagnostic.action) if diagnostic.action else "-"
-    started = display_value("last_update", diagnostic.started_at.isoformat() if diagnostic.started_at else "")
-    finished = display_value("last_update", diagnostic.finished_at.isoformat() if diagnostic.finished_at else "")
+    started = display_value("last_update", diagnostic.started_at.isoformat() if diagnostic.started_at else "", config.logging.timezone)
+    finished = display_value("last_update", diagnostic.finished_at.isoformat() if diagnostic.finished_at else "", config.logging.timezone)
     return_code = "-" if diagnostic.return_code is None else str(diagnostic.return_code)
     busy = diagnostic.status == "running"
     summary = diagnostic_summary(state, diagnostic)
@@ -1503,17 +1526,44 @@ def raw_display_label(key: str) -> str:
     return RAW_LABELS.get(key, key.replace("_", " ").title())
 
 
-def display_value(key: str, value: Any) -> str:
+def display_value(key: str, value: Any, timezone_name: str = "UTC") -> str:
     if isinstance(value, bool):
         return "Yes" if value else "No"
     if value in {"", None}:
         return "-"
     if key == "last_update":
-        return str(value).replace("T", " ").replace("+00:00", " UTC")
+        return format_timestamp(value, timezone_name)
     unit = VALUE_UNITS.get(key)
     if unit:
         return f"{value}{unit}"
     return str(value)
+
+
+def format_timestamp(value: Any, timezone_name: str) -> str:
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return str(value).replace("T", " ").replace("+00:00", " UTC")
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    target, label = resolve_timezone(timezone_name)
+    converted = parsed.astimezone(target)
+    return f"{converted.strftime('%Y-%m-%d %H:%M:%S')} {label}"
+
+
+def resolve_timezone(timezone_name: str) -> tuple[timezone | ZoneInfo, str]:
+    name = timezone_name.strip() or "UTC"
+    fixed_offsets = {
+        "UTC": timezone.utc,
+        "Etc/UTC": timezone.utc,
+        "Asia/Dubai": timezone(timedelta(hours=4)),
+    }
+    if name in fixed_offsets:
+        return fixed_offsets[name], name
+    try:
+        return ZoneInfo(name), name
+    except ZoneInfoNotFoundError:
+        return timezone.utc, "UTC"
 
 
 def render_config_form(config: AppConfig) -> str:
@@ -1585,6 +1635,7 @@ def render_config_form(config: AppConfig) -> str:
       <label>Log file path <input name="logging_file_path" value="{_escape(config.logging.file_path)}"></label>
       <label>apcupsd events path <input name="logging_apcupsd_events_path" value="{_escape(config.logging.apcupsd_events_path)}"></label>
       <label>Web log tail lines <input name="logging_web_tail_lines" type="number" min="1" value="{config.logging.web_tail_lines}"></label>
+      <label>Server timezone <input name="logging_timezone" value="{_escape(config.logging.timezone)}"></label>
     </div>
   </fieldset>
 

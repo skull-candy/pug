@@ -44,3 +44,5 @@ This project follows the spirit of Keep a Changelog. Update this file for every 
 - Saving Web UI settings now restarts the `powerpi-ups-gateway` service after writing `config.yaml`.
 - Switched update detection to GitLab Releases, with configurable self-hosted GitLab base URL, release check interval, persisted latest release metadata, and non-blocking release banners.
 - Bumped the application version to `0.1.2`.
+- Refined the dashboard power-flow diagram for battery charging/on-battery states, removed overview icons, tightened UPS Details spacing, improved live refresh, and added configurable timestamp timezone display.
+- Bumped the application version to `0.1.3`.
