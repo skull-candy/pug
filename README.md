@@ -1,3 +1,15 @@
+## 🚀 PowerPi UPS Gateway
+
+Turn your Raspberry Pi into a universal UPS monitoring gateway.
+
+<p align="center">
+<img src="https://vns.ae/assets/images/blog/powerpi-ups-gateway-dashboard.png"
+     alt="PowerPi UPS Gateway Web Dashboard"
+     width="900">
+</p>
+
+
+
 # PowerPi UPS Gateway
 
 PowerPi UPS Gateway (PUG) is a public UPS protocol gateway for Raspberry Pi and Linux. It reads UPS status from one backend, normalizes it into a shared state object, and exposes that state through SNMP.
@@ -84,6 +96,16 @@ HTTP defaults to port `8080`:
 - `http://<host>:8080/settings` configuration
 - `http://<host>:8080/logs` bounded PUG log and apcupsd event log tail view
 - `http://<host>:8080/updates` check, download, and install updates from the public repository
+
+
+## ⚡ Live Power Flow Monitoring
+
+<p align="center">
+<img src="https://vns.ae/assets/images/blog/powerpi-ups-gateway-live-power-flow.png"
+     alt="UPS Live Power Flow Diagram"
+     width="900">
+</p>
+
 
 The Web UI is the always-on control plane. The header keeps Dashboard top-level and groups Raw Stats, Diagnostics, Settings, Logs, Updates, and Metrics under Administration. The dashboard shows a live mode-aware UPS power-flow diagram, overview cards, UPS details, and raw backend stats without page reloads. The diagram highlights line/AVR, battery, bypass, or conversion path based on UPS status and input/output voltage. Diagnostics live on `/diagnostics`; use that page to start or abort an apcupsd self-test or battery calibration and watch the live command status, latest UPS status, and command output. Settings live on `/settings`; use that page to edit backend, SNMP, API, Prometheus, Home Assistant, MQTT, logging, display timezone, diagnostics, GitLab Releases update settings, and apcupsd service state. Save writes `config.yaml` and restarts the `powerpi-ups-gateway` service to apply backend, listener, SNMP, and MQTT runtime changes. Updates live on `/updates`; use that page to check the latest GitLab Release, view latest release metadata, install from the local checkout, reinstall PUG, and restart the systemd service. Logs live on `/logs` and tail both the PUG log and apcupsd events file, defaulting to `/var/log/apcupsd.events`. Both views update without page reloads and only read the configured number of lines, so huge log files do not slow the UI.
 
