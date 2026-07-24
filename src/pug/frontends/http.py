@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import base64
+import binascii
+import hmac
+import ipaddress
 import json
 import logging
 import subprocess
@@ -83,6 +87,8 @@ class HttpFrontend:
             def do_GET(self) -> None:
                 state = store.get()
                 config = frontend.current_config()
+                if not self._check_auth(config):
+                    return
                 if self.path.startswith("/assets/ups-icons/"):
                     asset = read_ups_icon(self.path.rsplit("/", 1)[-1])
                     if asset is None:
@@ -176,11 +182,13 @@ class HttpFrontend:
                     self._send_json({"error": "not found"}, status=404)
 
             def do_POST(self) -> None:
+                config = frontend.current_config()
+                if not self._check_auth(config):
+                    return
                 if self.path == "/api/diagnostics/start":
                     length = int(self.headers.get("Content-Length", "0"))
                     body = self.rfile.read(length).decode("utf-8")
                     form = parse_qs(body, keep_blank_values=True)
-                    config = frontend.current_config()
                     try:
                         started = frontend.diagnostics.start(_field(form, "action"), config.diagnostics)
                         self._send_json(
@@ -229,7 +237,6 @@ class HttpFrontend:
                     )
                     return
                 if self.path == "/homeassistant/rediscover":
-                    config = frontend.current_config()
                     if not config.mqtt.enabled:
                         self._send_json({"ok": False, "message": "MQTT publishing is disabled in Settings."}, status=400)
                         return
@@ -282,6 +289,20 @@ class HttpFrontend:
                 self.end_headers()
                 self.wfile.write(body)
 
+            def _check_auth(self, config: AppConfig) -> bool:
+                if not client_requires_http_auth(config, self.client_address[0]):
+                    return True
+                if valid_basic_auth_header(self.headers.get("Authorization"), config):
+                    return True
+                body = b'{"error": "authentication required"}'
+                self.send_response(401)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("WWW-Authenticate", 'Basic realm="PowerPi UPS Gateway"')
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return False
+
         return Handler
 
     def current_config(self) -> AppConfig:
@@ -311,6 +332,40 @@ def control_apcupsd_service(action: str) -> dict[str, Any]:
     return {"ok": result.returncode == 0, "message": message, "action": action, "return_code": result.returncode}
 
 
+def client_requires_http_auth(config: AppConfig, client_ip: str) -> bool:
+    if config.http.auth_mode == "disabled":
+        return False
+    if config.http.auth_mode == "always":
+        return True
+    try:
+        address = ipaddress.ip_address(client_ip)
+    except ValueError:
+        return True
+    for network_value in config.http.auth_bypass_networks:
+        try:
+            if address in ipaddress.ip_network(network_value, strict=False):
+                return False
+        except ValueError:
+            LOGGER.warning("ignoring invalid HTTP auth bypass network: %s", network_value)
+    return True
+
+
+def valid_basic_auth_header(header: str | None, config: AppConfig) -> bool:
+    if not header or not header.startswith("Basic "):
+        return False
+    try:
+        decoded = base64.b64decode(header[6:].strip(), validate=True).decode("utf-8")
+    except (binascii.Error, UnicodeDecodeError):
+        return False
+    username, separator, password = decoded.partition(":")
+    if not separator:
+        return False
+    return hmac.compare_digest(username, config.http.auth_username) and hmac.compare_digest(
+        password,
+        config.http.auth_password,
+    )
+
+
 def config_from_form(form: dict[str, list[str]], current_config: AppConfig | None = None) -> AppConfig:
     update_defaults = current_config.update if current_config else UpdateConfig()
     logging_defaults = current_config.logging if current_config else LoggingConfig()
@@ -338,6 +393,10 @@ def config_from_form(form: dict[str, list[str]], current_config: AppConfig | Non
             api_enabled=_checked(form, "http_api_enabled"),
             prometheus_enabled=_checked(form, "http_prometheus_enabled"),
             homeassistant_enabled=_checked(form, "http_homeassistant_enabled"),
+            auth_mode=_field(form, "http_auth_mode") or "disabled",
+            auth_username=_field(form, "http_auth_username"),
+            auth_password=_field(form, "http_auth_password"),
+            auth_bypass_networks=parse_network_list(_field(form, "http_auth_bypass_networks")),
         ),
         mqtt=MqttConfig(
             enabled=_checked(form, "mqtt_enabled"),
@@ -401,6 +460,10 @@ def config_to_public_dict(config: AppConfig) -> dict[str, Any]:
             "api_enabled": config.http.api_enabled,
             "prometheus_enabled": config.http.prometheus_enabled,
             "homeassistant_enabled": config.http.homeassistant_enabled,
+            "auth_mode": config.http.auth_mode,
+            "auth_username": config.http.auth_username,
+            "auth_password": "********" if config.http.auth_password else "",
+            "auth_bypass_networks": config.http.auth_bypass_networks,
         },
         "mqtt": {
             "enabled": config.mqtt.enabled,
@@ -477,6 +540,10 @@ def read_ups_icon(filename: str) -> bytes | None:
     except (FileNotFoundError, ModuleNotFoundError):
         LOGGER.warning("UPS icon asset is missing: %s", filename)
         return None
+
+
+def parse_network_list(value: str) -> list[str]:
+    return [part.strip() for part in value.replace("\n", ",").split(",") if part.strip()]
 
 
 def render_control_page(state: dict[str, Any], config: AppConfig) -> str:
@@ -1691,6 +1758,21 @@ def render_config_form(config: AppConfig) -> str:
       <label>Web listen address <input name="http_listen" value="{_escape(config.http.listen)}"></label>
       <label>Web port <input name="http_port" type="number" min="1" max="65535" value="{config.http.port}"></label>
     </div>
+    <div class="grid">
+      <label>Authentication
+        <select name="http_auth_mode">
+          <option value="disabled"{_selected(config.http.auth_mode, "disabled")}>disabled</option>
+          <option value="remote"{_selected(config.http.auth_mode, "remote")}>remote clients only</option>
+          <option value="always"{_selected(config.http.auth_mode, "always")}>always require</option>
+        </select>
+      </label>
+      <label>Auth username <input name="http_auth_username" value="{_escape(config.http.auth_username)}"></label>
+      <label>Auth password <input name="http_auth_password" type="password" value="{_escape(config.http.auth_password)}"></label>
+    </div>
+    <label>No-auth IPs/networks
+      <textarea name="http_auth_bypass_networks" rows="3">{_escape(', '.join(config.http.auth_bypass_networks))}</textarea>
+    </label>
+    <p class="hint">Remote-only authentication skips clients in the no-auth list. Use individual IPs or CIDR networks separated by commas.</p>
   </fieldset>
 
   <fieldset>

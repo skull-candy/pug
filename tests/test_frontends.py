@@ -1,10 +1,11 @@
 from pug.collector.simulator import simulator_state
-from pug.config import AppConfig, LoggingConfig, load_config, save_config
+from pug.config import AppConfig, HttpConfig, LoggingConfig, load_config, save_config
 from pug.diagnostics import DiagnosticSnapshot
 from pug.frontends.homeassistant import discovery_payloads
 from pug.frontends.http import (
     config_from_form,
     control_apcupsd_service,
+    client_requires_http_auth,
     display_label,
     display_value,
     power_flow_mode,
@@ -18,6 +19,7 @@ from pug.frontends.http import (
     render_updates_page,
     schedule_service_restart,
     tail_log_lines,
+    valid_basic_auth_header,
 )
 from pug.frontends.prometheus import render_metrics
 from pug.updater import UpdateSnapshot
@@ -195,6 +197,8 @@ def test_settings_page_contains_configuration_form() -> None:
     assert "GitLab base URL" in page
     assert "GitLab project path" in page
     assert "7 days" in page
+    assert "Authentication" in page
+    assert "No-auth IPs/networks" in page
 
 
 def test_config_save_restart_is_scheduled(monkeypatch) -> None:
@@ -370,6 +374,71 @@ def test_config_form_can_disable_methods() -> None:
     assert config.diagnostics.before_command == ["systemctl", "stop", "apcupsd"]
     assert config.diagnostics.self_test_selection == "2"
     assert config.logging.timezone == "UTC"
+    assert config.http.auth_mode == "disabled"
+
+
+def test_config_form_can_enable_remote_auth() -> None:
+    config = config_from_form(
+        {
+            "backend_type": ["apcupsd"],
+            "backend_command": ["apcaccess status localhost:3551"],
+            "backend_poll_interval_seconds": ["5"],
+            "snmp_listen": ["0.0.0.0"],
+            "snmp_port": ["1161"],
+            "snmp_community": ["public"],
+            "http_listen": ["0.0.0.0"],
+            "http_port": ["8080"],
+            "http_auth_mode": ["remote"],
+            "http_auth_username": ["admin"],
+            "http_auth_password": ["secret"],
+            "http_auth_bypass_networks": ["127.0.0.1, 192.168.1.0/24"],
+            "mqtt_host": ["mqtt.local"],
+            "mqtt_port": ["1883"],
+            "mqtt_client_id": ["pug"],
+            "mqtt_topic_prefix": ["powerpi/ups"],
+            "mqtt_discovery_prefix": ["homeassistant"],
+            "mqtt_publish_interval_seconds": ["30"],
+            "logging_level": ["INFO"],
+            "logging_file_path": ["/var/log/pug/pug.log"],
+            "logging_apcupsd_events_path": ["/var/log/apcupsd.events"],
+            "logging_web_tail_lines": ["300"],
+            "diagnostics_before_command": ["systemctl stop apcupsd"],
+            "diagnostics_after_command": ["systemctl start apcupsd"],
+            "diagnostics_self_test_command": ["apctest"],
+            "diagnostics_self_test_selection": ["2"],
+            "diagnostics_battery_calibration_command": ["apctest"],
+            "diagnostics_battery_calibration_selection": ["10"],
+            "diagnostics_command_timeout_seconds": ["21600"],
+        }
+    )
+
+    assert config.http.auth_mode == "remote"
+    assert config.http.auth_username == "admin"
+    assert config.http.auth_password == "secret"
+    assert config.http.auth_bypass_networks == ["127.0.0.1", "192.168.1.0/24"]
+
+
+def test_http_remote_auth_uses_bypass_networks() -> None:
+    config = AppConfig(
+        http=HttpConfig(
+            auth_mode="remote",
+            auth_username="admin",
+            auth_password="secret",
+            auth_bypass_networks=["127.0.0.0/8", "192.168.1.0/24"],
+        )
+    )
+
+    assert client_requires_http_auth(config, "127.0.0.1") is False
+    assert client_requires_http_auth(config, "192.168.1.42") is False
+    assert client_requires_http_auth(config, "203.0.113.20") is True
+
+
+def test_basic_auth_header_validation() -> None:
+    config = AppConfig(http=HttpConfig(auth_mode="always", auth_username="admin", auth_password="secret"))
+
+    assert valid_basic_auth_header("Basic YWRtaW46c2VjcmV0", config) is True
+    assert valid_basic_auth_header("Basic YWRtaW46d3Jvbmc=", config) is False
+    assert valid_basic_auth_header("Bearer token", config) is False
 
 
 def test_config_save_round_trip(tmp_path) -> None:

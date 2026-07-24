@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
+import ipaddress
 from pathlib import Path
 import shlex
 from typing import Any
@@ -34,6 +35,20 @@ class HttpConfig:
     api_enabled: bool = True
     prometheus_enabled: bool = True
     homeassistant_enabled: bool = True
+    auth_mode: str = "disabled"
+    auth_username: str = ""
+    auth_password: str = ""
+    auth_bypass_networks: list[str] = field(
+        default_factory=lambda: [
+            "127.0.0.0/8",
+            "::1/128",
+            "10.0.0.0/8",
+            "172.16.0.0/12",
+            "192.168.0.0/16",
+            "fc00::/7",
+            "fe80::/10",
+        ]
+    )
 
 
 @dataclass(frozen=True)
@@ -131,6 +146,23 @@ def config_from_mapping(data: dict[str, Any]) -> AppConfig:
             api_enabled=bool(http.get("api_enabled", True)),
             prometheus_enabled=bool(http.get("prometheus_enabled", True)),
             homeassistant_enabled=bool(http.get("homeassistant_enabled", True)),
+            auth_mode=str(http.get("auth_mode", "disabled")),
+            auth_username=str(http.get("auth_username", "")),
+            auth_password=str(http.get("auth_password", "")),
+            auth_bypass_networks=list(
+                http.get(
+                    "auth_bypass_networks",
+                    [
+                        "127.0.0.0/8",
+                        "::1/128",
+                        "10.0.0.0/8",
+                        "172.16.0.0/12",
+                        "192.168.0.0/16",
+                        "fc00::/7",
+                        "fe80::/10",
+                    ],
+                )
+            ),
         ),
         mqtt=MqttConfig(
             enabled=bool(mqtt.get("enabled", False)),
@@ -200,6 +232,15 @@ def validate_config(config: AppConfig) -> None:
         raise ConfigError("snmp.community must not be empty")
     if not 1 <= config.http.port <= 65535:
         raise ConfigError("http.port must be between 1 and 65535")
+    if config.http.auth_mode not in {"disabled", "always", "remote"}:
+        raise ConfigError("http.auth_mode must be disabled, always, or remote")
+    if config.http.auth_mode != "disabled" and (not config.http.auth_username or not config.http.auth_password):
+        raise ConfigError("http.auth_username and http.auth_password are required when authentication is enabled")
+    for network in config.http.auth_bypass_networks:
+        try:
+            ipaddress.ip_network(network, strict=False)
+        except ValueError as exc:
+            raise ConfigError(f"invalid http.auth_bypass_networks entry: {network}") from exc
     if not 1 <= config.mqtt.port <= 65535:
         raise ConfigError("mqtt.port must be between 1 and 65535")
     if config.mqtt.publish_interval_seconds <= 0:

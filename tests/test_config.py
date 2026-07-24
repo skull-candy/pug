@@ -1,6 +1,6 @@
 import pytest
 
-from pug.config import AppConfig, BackendConfig, ConfigError, SnmpConfig, load_config, validate_config
+from pug.config import AppConfig, BackendConfig, ConfigError, HttpConfig, SnmpConfig, load_config, validate_config
 
 
 def test_load_config_reads_project_example() -> None:
@@ -11,6 +11,8 @@ def test_load_config_reads_project_example() -> None:
     assert config.snmp.port == 161
     assert config.snmp.developer_log is True
     assert config.http.port == 8080
+    assert config.http.auth_mode == "disabled"
+    assert "192.168.0.0/16" in config.http.auth_bypass_networks
     assert config.mqtt.enabled is False
     assert config.logging.apcupsd_events_path == "/var/log/apcupsd.events"
     assert config.logging.timezone == "UTC"
@@ -35,6 +37,27 @@ def test_config_rejects_empty_backend_command() -> None:
     config = AppConfig(backend=BackendConfig(command=[]))
 
     with pytest.raises(ConfigError, match="backend.command"):
+        validate_config(config)
+
+
+def test_config_rejects_auth_without_credentials() -> None:
+    config = AppConfig(http=HttpConfig(auth_mode="remote", auth_username="admin", auth_password=""))
+
+    with pytest.raises(ConfigError, match="auth_username"):
+        validate_config(config)
+
+
+def test_config_rejects_invalid_auth_bypass_network() -> None:
+    config = AppConfig(
+        http=HttpConfig(
+            auth_mode="remote",
+            auth_username="admin",
+            auth_password="secret",
+            auth_bypass_networks=["not-a-network"],
+        )
+    )
+
+    with pytest.raises(ConfigError, match="auth_bypass_networks"):
         validate_config(config)
 
 

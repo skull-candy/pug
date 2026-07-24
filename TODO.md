@@ -5,7 +5,7 @@ This file tracks known follow-up work. Update it with every codebase change, eve
 ## Active
 
 - Make saved Web UI settings apply live without a service restart where practical.
-- Add optional authentication before exposing Web UI administration and update actions beyond a trusted LAN.
+- Added optional Web UI Basic authentication with always-on and remote-only modes plus trusted IP/CIDR bypass networks.
 
 ## Done
 

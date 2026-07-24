@@ -51,3 +51,4 @@ This project follows the spirit of Keep a Changelog. Update this file for every 
 - Bumped the application version to `0.1.5` for the Git tag and release refresh.
 - Added diagnostic abort support, kept battery calibration stdin open for apctest progress/abort tracking, restored apcupsd after abort, and added Settings controls for starting, stopping, and restarting apcupsd.
 - Bumped the application version to `0.1.6`.
+- Added optional HTTP Basic authentication for the Web UI/API with disabled, always-on, and remote-only modes plus trusted IP/CIDR bypass networks.

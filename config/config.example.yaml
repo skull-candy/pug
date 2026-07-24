@@ -17,6 +17,10 @@ http:
   api_enabled: true
   prometheus_enabled: true
   homeassistant_enabled: true
+  auth_mode: "disabled"
+  auth_username: ""
+  auth_password: ""
+  auth_bypass_networks: ["127.0.0.0/8", "::1/128", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7", "fe80::/10"]
 
 mqtt:
   enabled: false
