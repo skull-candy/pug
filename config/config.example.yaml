@@ -57,3 +57,48 @@ update:
   latest_version: ""
   latest_release_url: ""
   latest_release_name: ""
+
+notifications:
+  discord_enabled: false
+  discord_webhook_url_file: "/etc/pug/secrets/discord-webhook"
+  email_enabled: false
+  smtp_host: ""
+  smtp_port: 587
+  smtp_security: "starttls"
+  smtp_username: ""
+  smtp_password_file: "/etc/pug/secrets/smtp-password"
+  email_from: ""
+  email_recipients: []
+  minimum_severity: "warning"
+  timeout_seconds: 10
+
+power_actions:
+  enabled: false
+  armed: false
+  dry_run: true
+  minimum_on_battery_seconds: 180
+  battery_charge_percent: 30
+  runtime_minutes: 10
+  threshold_mode: "any"
+  consecutive_samples: 3
+  maximum_state_age_seconds: 15
+  rearm_after_online_seconds: 600
+  emergency_enabled: true
+  emergency_battery_charge_percent: 8
+  emergency_runtime_minutes: 2
+  proceed_if_ha_preflight_failed: false
+  proxmox_servers: []
+  verify_tls: true
+  ca_certificate_path: ""
+  request_timeout_seconds: 10
+  delay_between_nodes_seconds: 20
+  ha_disarm_before_shutdown: true
+  ha_disarm_mode: "freeze"
+  ha_recovery_mode: "manual"
+  ha_require_all_nodes: true
+  ha_require_quorum: true
+  ha_require_storage_healthy: true
+  ha_require_ceph_healthy: true
+  ha_health_stable_seconds: 120
+  rearm_only_if_pug_disarmed_ha: true
+  state_file_path: "/var/lib/pug/power-actions.json"

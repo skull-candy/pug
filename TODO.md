@@ -6,6 +6,7 @@ This file tracks known follow-up work. Update it with every codebase change, eve
 
 - Make saved Web UI settings apply live without a service restart where practical.
 - Added optional Web UI Basic authentication with always-on and remote-only modes plus trusted IP/CIDR bypass networks.
+- Commission Proxmox power actions against supported Proxmox versions and document the minimum version providing cluster-wide `disarm-ha`/`arm-ha` API endpoints.
 
 ## Done
 

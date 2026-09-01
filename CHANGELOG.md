@@ -8,6 +8,8 @@ This project follows the spirit of Keep a Changelog. Update this file for every 
 
 ### Added
 
+- Guarded Proxmox shutdown automation with persisted outage state, UPS thresholds, dry-run support, per-node API tokens, HA freeze and manual/automatic-safe rearming, quorum/storage/Ceph checks, Discord and SMTP alerts, Web UI controls, and audit history.
+- Bumped the application version to `0.2.0` for the power-actions feature set.
 - Initial project scaffold with apcupsd collector, simulator, normalized UPS state, SNMP BER/codec support, OID registry, APC PowerNet mappings, RFC1628 mappings, docs, systemd service, and tests.
 - `TODO.md` maintenance file and contribution rule requiring both `CHANGELOG.md` and `TODO.md` to stay current on every codebase update.
 - Basic SNMP GETNEXT support using numeric OID ordering, plus tests for walk-style resolution.

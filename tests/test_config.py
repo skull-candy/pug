@@ -24,6 +24,10 @@ def test_load_config_reads_project_example() -> None:
     assert config.update.gitlab_base_url == "https://git.vns.ae"
     assert config.update.project_path == "ahsan/pug"
     assert config.update.check_interval == "7d"
+    assert config.notifications.discord_enabled is False
+    assert config.power_actions.enabled is False
+    assert config.power_actions.dry_run is True
+    assert config.power_actions.ha_recovery_mode == "manual"
 
 
 def test_config_rejects_invalid_snmp_port() -> None:
@@ -58,6 +62,15 @@ def test_config_rejects_invalid_auth_bypass_network() -> None:
     )
 
     with pytest.raises(ConfigError, match="auth_bypass_networks"):
+        validate_config(config)
+
+
+def test_power_actions_require_web_authentication() -> None:
+    from pug.config import PowerActionsConfig
+
+    config = AppConfig(power_actions=PowerActionsConfig(enabled=True))
+
+    with pytest.raises(ConfigError, match="authentication"):
         validate_config(config)
 
 

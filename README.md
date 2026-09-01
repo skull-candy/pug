@@ -96,6 +96,15 @@ HTTP defaults to port `8080`:
 - `http://<host>:8080/settings` configuration
 - `http://<host>:8080/logs` bounded PUG log and apcupsd event log tail view
 - `http://<host>:8080/updates` check, download, and install updates from the public repository
+- `http://<host>:8080/power-actions` Proxmox shutdown, HA recovery, and notification status
+
+## Proxmox Power Actions
+
+PUG can perform a guarded, graceful Proxmox cluster shutdown when sustained UPS-on-battery criteria are met. The feature is disabled, disarmed, and in dry-run mode by default. It supports direct API-token connections to every node, quorum/storage/Ceph preflight checks, cluster-wide HA disarm in `freeze` mode, manual or health-gated automatic HA rearming after stable power returns, and Discord webhook or SMTP alerts.
+
+Configure servers in Settings using `name|host|node|token_id|token_secret_file|order`; higher order values shut down first. Store API tokens, Discord webhook URLs, and SMTP passwords in root-readable files rather than in `config.yaml`. Keep the Raspberry Pi and management network on UPS power, validate TLS with the Proxmox cluster CA, and complete a dry-run plus controlled outage test before enabling live actions.
+
+PUG only rearms HA automatically when its persisted outage record shows that PUG performed the disarm. Manual recovery is the default. While HA is disarmed in `freeze` mode, automatic HA recovery is unavailable and HA-managed guests remain frozen until HA is rearmed.
 
 
 ## ⚡ Live Power Flow Monitoring

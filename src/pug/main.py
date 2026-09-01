@@ -13,6 +13,7 @@ from pug.config import ConfigError, load_config
 from pug.frontends.http import HttpFrontend
 from pug.frontends.mqtt import MqttPublisher
 from pug.logger import configure_logging
+from pug.power_actions import PowerActionManager
 from pug.snmp.server import SnmpServer
 from pug.state import StateStore
 
@@ -41,6 +42,7 @@ def main(argv: list[str] | None = None) -> int:
 
     initial = simulator_state() if args.simulator else None
     store = StateStore(initial)
+    power_actions = PowerActionManager(store, lambda: load_config(args.config))
 
     collector_thread = threading.Thread(
         target=_collector_loop,
@@ -51,9 +53,18 @@ def main(argv: list[str] | None = None) -> int:
     collector_thread.start()
     worker_threads = [collector_thread]
 
+    power_thread = threading.Thread(
+        target=power_actions.run_forever,
+        args=(stop,),
+        name="power-actions",
+        daemon=True,
+    )
+    power_thread.start()
+    worker_threads.append(power_thread)
+
     if config.http.enabled:
         http_thread = threading.Thread(
-            target=HttpFrontend(store, args.config, config, config.http.listen, config.http.port).serve_forever,
+            target=HttpFrontend(store, args.config, config, config.http.listen, config.http.port, power_actions).serve_forever,
             args=(stop,),
             name="http",
             daemon=True,

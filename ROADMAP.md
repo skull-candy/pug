@@ -20,3 +20,4 @@
 - Container image.
 - Published package workflow.
 - Optional signed release/version metadata for the Web UI updater.
+- Proxmox power-loss orchestration with HA-aware shutdown/recovery and Discord/email alerting.

@@ -96,6 +96,55 @@ class UpdateConfig:
 
 
 @dataclass(frozen=True)
+class NotificationConfig:
+    discord_enabled: bool = False
+    discord_webhook_url_file: str = "/etc/pug/secrets/discord-webhook"
+    email_enabled: bool = False
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_security: str = "starttls"
+    smtp_username: str = ""
+    smtp_password_file: str = "/etc/pug/secrets/smtp-password"
+    email_from: str = ""
+    email_recipients: list[str] = field(default_factory=list)
+    minimum_severity: str = "warning"
+    timeout_seconds: int = 10
+
+
+@dataclass(frozen=True)
+class PowerActionsConfig:
+    enabled: bool = False
+    armed: bool = False
+    dry_run: bool = True
+    minimum_on_battery_seconds: int = 180
+    battery_charge_percent: int = 30
+    runtime_minutes: int = 10
+    threshold_mode: str = "any"
+    consecutive_samples: int = 3
+    maximum_state_age_seconds: int = 15
+    rearm_after_online_seconds: int = 600
+    emergency_enabled: bool = True
+    emergency_battery_charge_percent: int = 8
+    emergency_runtime_minutes: int = 2
+    proceed_if_ha_preflight_failed: bool = False
+    proxmox_servers: list[str] = field(default_factory=list)
+    verify_tls: bool = True
+    ca_certificate_path: str = ""
+    request_timeout_seconds: int = 10
+    delay_between_nodes_seconds: int = 20
+    ha_disarm_before_shutdown: bool = True
+    ha_disarm_mode: str = "freeze"
+    ha_recovery_mode: str = "manual"
+    ha_require_all_nodes: bool = True
+    ha_require_quorum: bool = True
+    ha_require_storage_healthy: bool = True
+    ha_require_ceph_healthy: bool = True
+    ha_health_stable_seconds: int = 120
+    rearm_only_if_pug_disarmed_ha: bool = True
+    state_file_path: str = "/var/lib/pug/power-actions.json"
+
+
+@dataclass(frozen=True)
 class AppConfig:
     backend: BackendConfig = field(default_factory=BackendConfig)
     snmp: SnmpConfig = field(default_factory=SnmpConfig)
@@ -104,6 +153,8 @@ class AppConfig:
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     diagnostics: DiagnosticsConfig = field(default_factory=DiagnosticsConfig)
     update: UpdateConfig = field(default_factory=UpdateConfig)
+    notifications: NotificationConfig = field(default_factory=NotificationConfig)
+    power_actions: PowerActionsConfig = field(default_factory=PowerActionsConfig)
 
 
 def load_config(path: str | Path | None) -> AppConfig:
@@ -126,6 +177,8 @@ def config_from_mapping(data: dict[str, Any]) -> AppConfig:
     logging = data.get("logging", {})
     diagnostics = data.get("diagnostics", {})
     update = data.get("update", {})
+    notifications = data.get("notifications", {})
+    power_actions = data.get("power_actions", {})
     return AppConfig(
         backend=BackendConfig(
             type=str(backend.get("type", "apcupsd")),
@@ -200,6 +253,51 @@ def config_from_mapping(data: dict[str, Any]) -> AppConfig:
             latest_release_url=str(update.get("latest_release_url", "")),
             latest_release_name=str(update.get("latest_release_name", "")),
         ),
+        notifications=NotificationConfig(
+            discord_enabled=bool(notifications.get("discord_enabled", False)),
+            discord_webhook_url_file=str(notifications.get("discord_webhook_url_file", "/etc/pug/secrets/discord-webhook")),
+            email_enabled=bool(notifications.get("email_enabled", False)),
+            smtp_host=str(notifications.get("smtp_host", "")),
+            smtp_port=int(notifications.get("smtp_port", 587)),
+            smtp_security=str(notifications.get("smtp_security", "starttls")),
+            smtp_username=str(notifications.get("smtp_username", "")),
+            smtp_password_file=str(notifications.get("smtp_password_file", "/etc/pug/secrets/smtp-password")),
+            email_from=str(notifications.get("email_from", "")),
+            email_recipients=list(notifications.get("email_recipients", [])),
+            minimum_severity=str(notifications.get("minimum_severity", "warning")),
+            timeout_seconds=int(notifications.get("timeout_seconds", 10)),
+        ),
+        power_actions=PowerActionsConfig(
+            enabled=bool(power_actions.get("enabled", False)),
+            armed=bool(power_actions.get("armed", False)),
+            dry_run=bool(power_actions.get("dry_run", True)),
+            minimum_on_battery_seconds=int(power_actions.get("minimum_on_battery_seconds", 180)),
+            battery_charge_percent=int(power_actions.get("battery_charge_percent", 30)),
+            runtime_minutes=int(power_actions.get("runtime_minutes", 10)),
+            threshold_mode=str(power_actions.get("threshold_mode", "any")),
+            consecutive_samples=int(power_actions.get("consecutive_samples", 3)),
+            maximum_state_age_seconds=int(power_actions.get("maximum_state_age_seconds", 15)),
+            rearm_after_online_seconds=int(power_actions.get("rearm_after_online_seconds", 600)),
+            emergency_enabled=bool(power_actions.get("emergency_enabled", True)),
+            emergency_battery_charge_percent=int(power_actions.get("emergency_battery_charge_percent", 8)),
+            emergency_runtime_minutes=int(power_actions.get("emergency_runtime_minutes", 2)),
+            proceed_if_ha_preflight_failed=bool(power_actions.get("proceed_if_ha_preflight_failed", False)),
+            proxmox_servers=list(power_actions.get("proxmox_servers", [])),
+            verify_tls=bool(power_actions.get("verify_tls", True)),
+            ca_certificate_path=str(power_actions.get("ca_certificate_path", "")),
+            request_timeout_seconds=int(power_actions.get("request_timeout_seconds", 10)),
+            delay_between_nodes_seconds=int(power_actions.get("delay_between_nodes_seconds", 20)),
+            ha_disarm_before_shutdown=bool(power_actions.get("ha_disarm_before_shutdown", True)),
+            ha_disarm_mode=str(power_actions.get("ha_disarm_mode", "freeze")),
+            ha_recovery_mode=str(power_actions.get("ha_recovery_mode", "manual")),
+            ha_require_all_nodes=bool(power_actions.get("ha_require_all_nodes", True)),
+            ha_require_quorum=bool(power_actions.get("ha_require_quorum", True)),
+            ha_require_storage_healthy=bool(power_actions.get("ha_require_storage_healthy", True)),
+            ha_require_ceph_healthy=bool(power_actions.get("ha_require_ceph_healthy", True)),
+            ha_health_stable_seconds=int(power_actions.get("ha_health_stable_seconds", 120)),
+            rearm_only_if_pug_disarmed_ha=bool(power_actions.get("rearm_only_if_pug_disarmed_ha", True)),
+            state_file_path=str(power_actions.get("state_file_path", "/var/lib/pug/power-actions.json")),
+        ),
     )
 
 
@@ -265,6 +363,52 @@ def validate_config(config: AppConfig) -> None:
         raise ConfigError("update.gitlab_base_url must not be empty")
     if not config.update.project_path:
         raise ConfigError("update.project_path must not be empty")
+    if config.power_actions.enabled and config.http.enabled and config.http.auth_mode == "disabled":
+        raise ConfigError("HTTP authentication must be enabled before power_actions can be enabled")
+    if config.notifications.smtp_security not in {"none", "starttls", "tls"}:
+        raise ConfigError("notifications.smtp_security must be none, starttls, or tls")
+    if not 1 <= config.notifications.smtp_port <= 65535:
+        raise ConfigError("notifications.smtp_port must be between 1 and 65535")
+    if config.notifications.email_enabled and (not config.notifications.smtp_host or not config.notifications.email_from or not config.notifications.email_recipients):
+        raise ConfigError("email notifications require smtp_host, email_from, and email_recipients")
+    if config.notifications.minimum_severity not in {"info", "warning", "critical"}:
+        raise ConfigError("notifications.minimum_severity must be info, warning, or critical")
+    if config.notifications.timeout_seconds <= 0:
+        raise ConfigError("notifications.timeout_seconds must be greater than zero")
+    if config.notifications.discord_enabled and not config.notifications.discord_webhook_url_file:
+        raise ConfigError("notifications.discord_webhook_url_file is required when Discord is enabled")
+    if config.power_actions.threshold_mode not in {"any", "all"}:
+        raise ConfigError("power_actions.threshold_mode must be any or all")
+    if config.power_actions.ha_disarm_mode not in {"freeze", "ignore"}:
+        raise ConfigError("power_actions.ha_disarm_mode must be freeze or ignore")
+    if config.power_actions.ha_recovery_mode not in {"manual", "automatic_safe", "leave_disarmed"}:
+        raise ConfigError("power_actions.ha_recovery_mode must be manual, automatic_safe, or leave_disarmed")
+    if config.power_actions.armed and not config.power_actions.enabled:
+        raise ConfigError("power_actions must be enabled before they can be armed")
+    if config.power_actions.enabled and not config.power_actions.proxmox_servers:
+        raise ConfigError("power_actions.proxmox_servers must not be empty when enabled")
+    if not 0 <= config.power_actions.battery_charge_percent <= 100 or not 0 <= config.power_actions.emergency_battery_charge_percent <= 100:
+        raise ConfigError("power action battery thresholds must be between 0 and 100")
+    if config.power_actions.runtime_minutes < 0 or config.power_actions.emergency_runtime_minutes < 0 or config.power_actions.delay_between_nodes_seconds < 0:
+        raise ConfigError("power action runtime thresholds and node delay must not be negative")
+    for name, value in {
+        "minimum_on_battery_seconds": config.power_actions.minimum_on_battery_seconds,
+        "consecutive_samples": config.power_actions.consecutive_samples,
+        "maximum_state_age_seconds": config.power_actions.maximum_state_age_seconds,
+        "rearm_after_online_seconds": config.power_actions.rearm_after_online_seconds,
+        "request_timeout_seconds": config.power_actions.request_timeout_seconds,
+        "ha_health_stable_seconds": config.power_actions.ha_health_stable_seconds,
+    }.items():
+        if value <= 0:
+            raise ConfigError(f"power_actions.{name} must be greater than zero")
+    for server in config.power_actions.proxmox_servers:
+        parts = str(server).split("|")
+        if len(parts) != 6 or not all(part.strip() for part in parts):
+            raise ConfigError("each power_actions.proxmox_servers entry must be name|host|node|token_id|token_secret_file|order")
+        try:
+            int(parts[-1])
+        except ValueError as exc:
+            raise ConfigError("Proxmox server shutdown order must be an integer") from exc
 
 
 def _parse_simple_yaml(text: str) -> dict[str, Any]:

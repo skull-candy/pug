@@ -7,6 +7,7 @@ import ipaddress
 import json
 import logging
 import subprocess
+from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 from importlib.resources import files
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -25,6 +26,8 @@ from pug.config import (
     HttpConfig,
     LoggingConfig,
     MqttConfig,
+    NotificationConfig,
+    PowerActionsConfig,
     SnmpConfig,
     UpdateConfig,
     format_command,
@@ -38,6 +41,7 @@ from pug.frontends.homeassistant import discovery_payloads
 from pug.frontends.mqtt import publish_homeassistant_rediscovery
 from pug.frontends.prometheus import render_metrics
 from pug.raw_stats import state_payload
+from pug.power_actions import PowerActionManager
 from pug.state import StateStore
 from pug.updater import SERVICE_NAME, UpdateManager, UpdateSnapshot, restart_service_later
 
@@ -52,6 +56,7 @@ class HttpFrontend:
         config: AppConfig,
         listen: str = "0.0.0.0",
         port: int = 8080,
+        power_actions: PowerActionManager | None = None,
     ) -> None:
         self.store = store
         self.config_path = Path(config_path)
@@ -60,6 +65,7 @@ class HttpFrontend:
         self.port = port
         self.diagnostics = DiagnosticManager()
         self.updater = UpdateManager(self.config_path, config)
+        self.power_actions = power_actions
 
     def serve_forever(self, stop: Event) -> None:
         handler = self._handler()
@@ -129,6 +135,11 @@ class HttpFrontend:
                         "text/html; charset=utf-8",
                         render_updates_page(frontend.updater.snapshot()).encode(),
                     )
+                elif self.path == "/power-actions":
+                    if frontend.power_actions is None:
+                        self._send_json({"error": "power action manager unavailable"}, status=503)
+                    else:
+                        self._send(200, "text/html; charset=utf-8", render_power_actions_page(config, frontend.power_actions.snapshot().to_dict()).encode())
                 elif self.path == "/raw":
                     self._send(
                         200,
@@ -160,6 +171,11 @@ class HttpFrontend:
                     self._send_json(diagnostics_api_payload(state.to_dict(), frontend.diagnostics.snapshot()))
                 elif self.path == "/api/updates":
                     self._send_json(frontend.updater.snapshot().to_dict())
+                elif self.path == "/api/power-actions":
+                    if frontend.power_actions is None:
+                        self._send_json({"error": "power action manager unavailable"}, status=503)
+                    else:
+                        self._send_json(frontend.power_actions.snapshot().to_dict())
                 elif self.path == "/metrics":
                     if config.http.prometheus_enabled:
                         self._send(200, "text/plain; version=0.0.4; charset=utf-8", render_metrics(state).encode())
@@ -235,6 +251,27 @@ class HttpFrontend:
                             "update": frontend.updater.snapshot().to_dict(),
                         }
                     )
+                    return
+                if self.path.startswith("/api/power-actions/"):
+                    if frontend.power_actions is None:
+                        self._send_json({"ok": False, "message": "power action manager unavailable"}, status=503)
+                        return
+                    action = self.path.rsplit("/", 1)[-1]
+                    if action == "shutdown":
+                        ok = frontend.power_actions.start_shutdown(manual=True)
+                        self._send_json({"ok": ok, "message": "Shutdown workflow started." if ok else "Shutdown workflow could not be started."}, status=200 if ok else 409)
+                    elif action == "rearm-ha":
+                        ok = frontend.power_actions.rearm_ha(manual=True)
+                        self._send_json({"ok": ok, "message": frontend.power_actions.snapshot().message}, status=200 if ok else 409)
+                    elif action == "reset":
+                        frontend.power_actions.reset_latch()
+                        self._send_json({"ok": True, "message": "Shutdown latch reset."})
+                    elif action == "test-notifications":
+                        results = frontend.power_actions.test_notifications()
+                        ok = bool(results) and all(item["ok"] for item in results)
+                        self._send_json({"ok": ok, "results": results, "message": "Notification test completed."}, status=200 if ok else 502)
+                    else:
+                        self._send_json({"error": "not found"}, status=404)
                     return
                 if self.path == "/homeassistant/rediscover":
                     if not config.mqtt.enabled:
@@ -434,6 +471,51 @@ def config_from_form(form: dict[str, list[str]], current_config: AppConfig | Non
             latest_release_url=update_defaults.latest_release_url,
             latest_release_name=update_defaults.latest_release_name,
         ),
+        notifications=NotificationConfig(
+            discord_enabled=_checked(form, "notifications_discord_enabled"),
+            discord_webhook_url_file=_field(form, "notifications_discord_webhook_url_file"),
+            email_enabled=_checked(form, "notifications_email_enabled"),
+            smtp_host=_field(form, "notifications_smtp_host"),
+            smtp_port=int(_field(form, "notifications_smtp_port")),
+            smtp_security=_field(form, "notifications_smtp_security"),
+            smtp_username=_field(form, "notifications_smtp_username"),
+            smtp_password_file=_field(form, "notifications_smtp_password_file"),
+            email_from=_field(form, "notifications_email_from"),
+            email_recipients=parse_network_list(_field(form, "notifications_email_recipients")),
+            minimum_severity=_field(form, "notifications_minimum_severity"),
+            timeout_seconds=int(_field(form, "notifications_timeout_seconds")),
+        ) if "notifications_smtp_port" in form else (current_config.notifications if current_config else NotificationConfig()),
+        power_actions=PowerActionsConfig(
+            enabled=_checked(form, "power_actions_enabled"),
+            armed=_checked(form, "power_actions_armed"),
+            dry_run=_checked(form, "power_actions_dry_run"),
+            minimum_on_battery_seconds=int(_field(form, "power_actions_minimum_on_battery_seconds")),
+            battery_charge_percent=int(_field(form, "power_actions_battery_charge_percent")),
+            runtime_minutes=int(_field(form, "power_actions_runtime_minutes")),
+            threshold_mode=_field(form, "power_actions_threshold_mode"),
+            consecutive_samples=int(_field(form, "power_actions_consecutive_samples")),
+            maximum_state_age_seconds=int(_field(form, "power_actions_maximum_state_age_seconds")),
+            rearm_after_online_seconds=int(_field(form, "power_actions_rearm_after_online_seconds")),
+            emergency_enabled=_checked(form, "power_actions_emergency_enabled"),
+            emergency_battery_charge_percent=int(_field(form, "power_actions_emergency_battery_charge_percent")),
+            emergency_runtime_minutes=int(_field(form, "power_actions_emergency_runtime_minutes")),
+            proceed_if_ha_preflight_failed=_checked(form, "power_actions_proceed_if_ha_preflight_failed"),
+            proxmox_servers=[line.strip() for line in _field(form, "power_actions_proxmox_servers").splitlines() if line.strip()],
+            verify_tls=_checked(form, "power_actions_verify_tls"),
+            ca_certificate_path=_field(form, "power_actions_ca_certificate_path"),
+            request_timeout_seconds=int(_field(form, "power_actions_request_timeout_seconds")),
+            delay_between_nodes_seconds=int(_field(form, "power_actions_delay_between_nodes_seconds")),
+            ha_disarm_before_shutdown=_checked(form, "power_actions_ha_disarm_before_shutdown"),
+            ha_disarm_mode=_field(form, "power_actions_ha_disarm_mode"),
+            ha_recovery_mode=_field(form, "power_actions_ha_recovery_mode"),
+            ha_require_all_nodes=_checked(form, "power_actions_ha_require_all_nodes"),
+            ha_require_quorum=_checked(form, "power_actions_ha_require_quorum"),
+            ha_require_storage_healthy=_checked(form, "power_actions_ha_require_storage_healthy"),
+            ha_require_ceph_healthy=_checked(form, "power_actions_ha_require_ceph_healthy"),
+            ha_health_stable_seconds=int(_field(form, "power_actions_ha_health_stable_seconds")),
+            rearm_only_if_pug_disarmed_ha=_checked(form, "power_actions_rearm_only_if_pug_disarmed_ha"),
+            state_file_path=_field(form, "power_actions_state_file_path"),
+        ) if "power_actions_minimum_on_battery_seconds" in form else (current_config.power_actions if current_config else PowerActionsConfig()),
     )
     validate_config(config)
     return config
@@ -501,6 +583,8 @@ def config_to_public_dict(config: AppConfig) -> dict[str, Any]:
             "latest_release_url": config.update.latest_release_url,
             "latest_release_name": config.update.latest_release_name,
         },
+        "notifications": {**asdict(config.notifications), "smtp_password_file": config.notifications.smtp_password_file, "discord_webhook_url_file": config.notifications.discord_webhook_url_file},
+        "power_actions": asdict(config.power_actions),
     }
 
 
@@ -776,6 +860,7 @@ def page_shell(title: str, active: str, content: str, auto_refresh: bool = False
         <div class="admin-panel">
           <a class="{_active(active, 'raw')}" href="/raw">Raw Stats</a>
           <a class="{_active(active, 'diagnostics')}" href="/diagnostics">Diagnostics</a>
+          <a class="{_active(active, 'power-actions')}" href="/power-actions">Power Actions</a>
           <a class="{_active(active, 'settings')}" href="/settings">Settings</a>
           <a class="{_active(active, 'logs')}" href="/logs">Logs</a>
           <a class="{_active(active, 'updates')}" href="/updates">Updates</a>
@@ -1117,7 +1202,7 @@ def _active(active: str, page: str) -> str:
 
 
 def _admin_active(active: str) -> str:
-    return "active" if active in {"raw", "diagnostics", "settings", "logs", "updates"} else ""
+    return "active" if active in {"raw", "diagnostics", "power-actions", "settings", "logs", "updates"} else ""
 
 
 def _format_time(value: datetime | None) -> str:
@@ -1202,6 +1287,56 @@ def render_settings_page(config: AppConfig) -> str:
           }})();
           </script>
         </section>
+        """,
+    )
+
+
+def render_power_actions_page(config: AppConfig, snapshot: dict[str, Any]) -> str:
+    results = "".join(f"<tr><th>{_escape(name)}</th><td>{_escape(value)}</td></tr>" for name, value in snapshot.get("node_results", {}).items()) or '<tr><td colspan="2">No node actions yet.</td></tr>'
+    events = "".join(
+        f"<tr><td>{_escape(row.get('time', ''))}</td><td>{_escape(row.get('severity', ''))}</td><td>{_escape(row.get('event', ''))}</td><td>{_escape(row.get('message', ''))}</td></tr>"
+        for row in reversed(snapshot.get("event_log", [])[-25:])
+    ) or '<tr><td colspan="4">No events yet.</td></tr>'
+    return page_shell(
+        "Power Actions",
+        "power-actions",
+        f"""
+        <section>
+          <div class="section-head"><div><h1>Power Actions</h1><p class="muted">UPS-triggered Proxmox shutdown, HA freeze/recovery, and alerts.</p></div><span class="health {'ok' if snapshot.get('phase') == 'monitoring' else 'warn'}">{_escape(snapshot.get('phase', 'unknown'))}</span></div>
+          <div class="diagnostic-status">
+            <div class="metric"><div class="metric-label">Automation</div><div class="metric-value">{'Armed' if config.power_actions.enabled and config.power_actions.armed else 'Disarmed'}</div></div>
+            <div class="metric"><div class="metric-label">Mode</div><div class="metric-value">{'Dry run' if config.power_actions.dry_run else 'Live'}</div></div>
+            <div class="metric"><div class="metric-label">HA</div><div class="metric-value">{_escape(snapshot.get('ha_state', 'unknown'))}</div></div>
+            <div class="metric"><div class="metric-label">Recovery</div><div class="metric-value">{_escape(config.power_actions.ha_recovery_mode)}</div></div>
+          </div>
+          <p id="power-message">{_escape(snapshot.get('message', ''))}</p>
+          <div class="actions">
+            <button class="button secondary power-action" data-action="test-notifications">Test Notifications</button>
+            <button class="button secondary power-action" data-action="rearm-ha">Rearm HA</button>
+            <button class="button secondary power-action" data-action="reset">Reset Latch</button>
+            <button class="danger power-action" data-action="shutdown">Run Shutdown Workflow</button>
+          </div>
+        </section>
+        <section><h2>Node Results</h2><table>{results}</table></section>
+        <section><h2>Recent Events</h2><div style="overflow:auto"><table><thead><tr><th>Time</th><th>Severity</th><th>Event</th><th>Message</th></tr></thead><tbody>{events}</tbody></table></div></section>
+        <section><h2>Configuration</h2><p class="muted">Configure and arm this feature from Settings. Keep dry-run enabled until a controlled commissioning test has passed.</p><a class="button secondary" href="/settings">Open Settings</a></section>
+        <script>
+        (() => {{
+          const status = document.getElementById("power-message");
+          document.querySelectorAll(".power-action").forEach(button => button.addEventListener("click", async () => {{
+            const action = button.dataset.action;
+            if ((action === "shutdown" || action === "rearm-ha" || action === "reset") && !confirm(`Confirm ${{action}}?`)) return;
+            document.querySelectorAll(".power-action").forEach(item => item.disabled = true);
+            try {{
+              const response = await fetch(`/api/power-actions/${{action}}`, {{method:"POST"}});
+              const payload = await response.json();
+              status.textContent = payload.message || JSON.stringify(payload.results || payload);
+              if (payload.ok && action !== "test-notifications") setTimeout(() => location.reload(), 800);
+            }} catch (error) {{ status.textContent = String(error); }}
+            finally {{ document.querySelectorAll(".power-action").forEach(item => item.disabled = false); }}
+          }}));
+        }})();
+        </script>
         """,
     )
 
@@ -1832,6 +1967,59 @@ def render_config_form(config: AppConfig) -> str:
       <label>Battery calibration menu selection <input name="diagnostics_battery_calibration_selection" value="{_escape(config.diagnostics.battery_calibration_selection)}"></label>
       <label>Command timeout seconds <input name="diagnostics_command_timeout_seconds" type="number" min="1" value="{config.diagnostics.command_timeout_seconds}"></label>
     </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Discord and Email Alerts</legend>
+    <label class="check"><input name="notifications_discord_enabled" type="checkbox"{_checked_attr(config.notifications.discord_enabled)}> Enable Discord webhook</label>
+    <label>Discord webhook secret file <input name="notifications_discord_webhook_url_file" value="{_escape(config.notifications.discord_webhook_url_file)}"></label>
+    <label class="check"><input name="notifications_email_enabled" type="checkbox"{_checked_attr(config.notifications.email_enabled)}> Enable email</label>
+    <div class="grid">
+      <label>SMTP host <input name="notifications_smtp_host" value="{_escape(config.notifications.smtp_host)}"></label>
+      <label>SMTP port <input name="notifications_smtp_port" type="number" value="{config.notifications.smtp_port}"></label>
+      <label>SMTP security <select name="notifications_smtp_security"><option value="starttls"{_selected(config.notifications.smtp_security, 'starttls')}>STARTTLS</option><option value="tls"{_selected(config.notifications.smtp_security, 'tls')}>Implicit TLS</option><option value="none"{_selected(config.notifications.smtp_security, 'none')}>None</option></select></label>
+      <label>SMTP username <input name="notifications_smtp_username" value="{_escape(config.notifications.smtp_username)}"></label>
+      <label>SMTP password secret file <input name="notifications_smtp_password_file" value="{_escape(config.notifications.smtp_password_file)}"></label>
+      <label>From address <input name="notifications_email_from" value="{_escape(config.notifications.email_from)}"></label>
+      <label>Recipients <input name="notifications_email_recipients" value="{_escape(', '.join(config.notifications.email_recipients))}"></label>
+      <label>Minimum severity <select name="notifications_minimum_severity"><option value="info"{_selected(config.notifications.minimum_severity, 'info')}>Info</option><option value="warning"{_selected(config.notifications.minimum_severity, 'warning')}>Warning</option><option value="critical"{_selected(config.notifications.minimum_severity, 'critical')}>Critical</option></select></label>
+      <label>Timeout seconds <input name="notifications_timeout_seconds" type="number" min="1" value="{config.notifications.timeout_seconds}"></label>
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Proxmox Power Actions</legend>
+    <p class="hint">Start in dry-run mode. Server format: name|host|node|token_id|token_secret_file|order. Higher order shuts down first.</p>
+    <label class="check"><input name="power_actions_enabled" type="checkbox"{_checked_attr(config.power_actions.enabled)}> Enable power actions</label>
+    <label class="check"><input name="power_actions_armed" type="checkbox"{_checked_attr(config.power_actions.armed)}> Arm automatic shutdown</label>
+    <label class="check"><input name="power_actions_dry_run" type="checkbox"{_checked_attr(config.power_actions.dry_run)}> Dry run (no Proxmox mutations)</label>
+    <label>Proxmox servers<textarea name="power_actions_proxmox_servers" rows="5">{_escape(chr(10).join(config.power_actions.proxmox_servers))}</textarea></label>
+    <div class="grid">
+      <label>Minimum on-battery seconds <input name="power_actions_minimum_on_battery_seconds" type="number" min="1" value="{config.power_actions.minimum_on_battery_seconds}"></label>
+      <label>Battery threshold % <input name="power_actions_battery_charge_percent" type="number" min="0" max="100" value="{config.power_actions.battery_charge_percent}"></label>
+      <label>Runtime threshold minutes <input name="power_actions_runtime_minutes" type="number" min="0" value="{config.power_actions.runtime_minutes}"></label>
+      <label>Threshold mode <select name="power_actions_threshold_mode"><option value="any"{_selected(config.power_actions.threshold_mode, 'any')}>Any threshold</option><option value="all"{_selected(config.power_actions.threshold_mode, 'all')}>All thresholds</option></select></label>
+      <label>Consecutive samples <input name="power_actions_consecutive_samples" type="number" min="1" value="{config.power_actions.consecutive_samples}"></label>
+      <label>Maximum UPS state age seconds <input name="power_actions_maximum_state_age_seconds" type="number" min="1" value="{config.power_actions.maximum_state_age_seconds}"></label>
+      <label>Stable power before recovery seconds <input name="power_actions_rearm_after_online_seconds" type="number" min="1" value="{config.power_actions.rearm_after_online_seconds}"></label>
+      <label>HA recovery <select name="power_actions_ha_recovery_mode"><option value="manual"{_selected(config.power_actions.ha_recovery_mode, 'manual')}>Manual</option><option value="automatic_safe"{_selected(config.power_actions.ha_recovery_mode, 'automatic_safe')}>Fully automatic (safe)</option><option value="leave_disarmed"{_selected(config.power_actions.ha_recovery_mode, 'leave_disarmed')}>Leave disarmed</option></select></label>
+      <label>HA disarm mode <select name="power_actions_ha_disarm_mode"><option value="freeze"{_selected(config.power_actions.ha_disarm_mode, 'freeze')}>Freeze</option><option value="ignore"{_selected(config.power_actions.ha_disarm_mode, 'ignore')}>Ignore</option></select></label>
+      <label>HA health stable seconds <input name="power_actions_ha_health_stable_seconds" type="number" min="1" value="{config.power_actions.ha_health_stable_seconds}"></label>
+      <label>API timeout seconds <input name="power_actions_request_timeout_seconds" type="number" min="1" value="{config.power_actions.request_timeout_seconds}"></label>
+      <label>Delay between nodes seconds <input name="power_actions_delay_between_nodes_seconds" type="number" min="0" value="{config.power_actions.delay_between_nodes_seconds}"></label>
+      <label>CA certificate path <input name="power_actions_ca_certificate_path" value="{_escape(config.power_actions.ca_certificate_path)}"></label>
+      <label>State file path <input name="power_actions_state_file_path" value="{_escape(config.power_actions.state_file_path)}"></label>
+    </div>
+    <label class="check"><input name="power_actions_verify_tls" type="checkbox"{_checked_attr(config.power_actions.verify_tls)}> Verify Proxmox TLS certificates</label>
+    <label class="check"><input name="power_actions_ha_disarm_before_shutdown" type="checkbox"{_checked_attr(config.power_actions.ha_disarm_before_shutdown)}> Disarm HA before shutdown</label>
+    <label class="check"><input name="power_actions_ha_require_all_nodes" type="checkbox"{_checked_attr(config.power_actions.ha_require_all_nodes)}> Require all nodes before rearming</label>
+    <label class="check"><input name="power_actions_ha_require_quorum" type="checkbox"{_checked_attr(config.power_actions.ha_require_quorum)}> Require quorum</label>
+    <label class="check"><input name="power_actions_ha_require_storage_healthy" type="checkbox"{_checked_attr(config.power_actions.ha_require_storage_healthy)}> Require healthy storage</label>
+    <label class="check"><input name="power_actions_ha_require_ceph_healthy" type="checkbox"{_checked_attr(config.power_actions.ha_require_ceph_healthy)}> Require healthy Ceph when present</label>
+    <label class="check"><input name="power_actions_rearm_only_if_pug_disarmed_ha" type="checkbox"{_checked_attr(config.power_actions.rearm_only_if_pug_disarmed_ha)}> Rearm only if PUG disarmed HA</label>
+    <label class="check"><input name="power_actions_emergency_enabled" type="checkbox"{_checked_attr(config.power_actions.emergency_enabled)}> Enable emergency threshold</label>
+    <div class="grid"><label>Emergency battery % <input name="power_actions_emergency_battery_charge_percent" type="number" min="0" max="100" value="{config.power_actions.emergency_battery_charge_percent}"></label><label>Emergency runtime minutes <input name="power_actions_emergency_runtime_minutes" type="number" min="0" value="{config.power_actions.emergency_runtime_minutes}"></label></div>
+    <label class="check"><input name="power_actions_proceed_if_ha_preflight_failed" type="checkbox"{_checked_attr(config.power_actions.proceed_if_ha_preflight_failed)}> Emergency may proceed after HA preflight failure</label>
   </fieldset>
 
   <button type="submit">Save Configuration</button>
