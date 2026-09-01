@@ -82,7 +82,7 @@ class UpdateManager:
         self.config_path = Path(config_path) if config_path else None
         self.update_log_path = self.config_path.parent / "update.log" if self.config_path else None
         self._default_config = config or AppConfig()
-        self.repo_path = Path(repo_path) if repo_path else Path(__file__).resolve().parents[2]
+        self.repo_path = Path(repo_path) if repo_path else discover_repo_path(self.config_path)
         self._lock = threading.Lock()
         initial = snapshot_from_config(self._load_config())
         initial_branch = safe_current_branch(self.repo_path)
@@ -488,7 +488,7 @@ def parse_datetime(value: str) -> datetime | None:
 
 def install_update(repo_path: Path, log: Any, channel: str = "branch", target: str = "") -> None:
     ensure_git_repo(repo_path)
-    if run_git(repo_path, ["status", "--porcelain"]).stdout.strip():
+    if run_git(repo_path, ["status", "--porcelain", "--untracked-files=no"]).stdout.strip():
         raise RuntimeError("The repository has uncommitted changes; commit or stash them before switching or updating.")
     log("Fetching latest source...")
     run_git(repo_path, ["fetch", "origin", "--prune", "--tags"])
@@ -528,6 +528,19 @@ def ensure_git_repo(repo_path: Path) -> None:
         raise RuntimeError(f"{repo_path} is not a git checkout")
     if not remote_url(repo_path):
         run_git(repo_path, ["remote", "add", "origin", PUBLIC_REPO_URL])
+
+
+def discover_repo_path(config_path: Path | None = None) -> Path:
+    """Find the checkout when PUG runs from either source or site-packages."""
+    candidates: list[Path] = []
+    if config_path:
+        candidates.extend(config_path.resolve().parents)
+    candidates.append(Path.cwd())
+    candidates.append(Path(__file__).resolve().parents[2])
+    for candidate in candidates:
+        if (candidate / ".git").exists():
+            return candidate
+    return Path.cwd()
 
 
 def remote_url(repo_path: Path) -> str:

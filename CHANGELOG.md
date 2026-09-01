@@ -8,6 +8,7 @@ This project follows the spirit of Keep a Changelog. Update this file for every 
 
 ### Added
 
+- Backported persistent update diagnostics and installed-package repository discovery to the Proxmox feature branch.
 - Guarded Proxmox shutdown automation with persisted outage state, UPS thresholds, dry-run support, per-node API tokens, HA freeze and manual/automatic-safe rearming, quorum/storage/Ceph checks, Discord and SMTP alerts, Web UI controls, and audit history.
 - Bumped the application version to `0.2.0` for the power-actions feature set.
 - Added release and feature-branch update channels, remote branch discovery and compatibility warnings, exact release-tag installation, commit-based branch checks, visible check failures, clean-worktree protection, and bumped the version to `0.2.1`.
