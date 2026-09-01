@@ -106,6 +106,12 @@ Configure servers in Settings using `name|host|node|token_id|token_secret_file|o
 
 PUG only rearms HA automatically when its persisted outage record shows that PUG performed the disarm. Manual recovery is the default. While HA is disarmed in `freeze` mode, automatic HA recovery is unavailable and HA-managed guests remain frozen until HA is rearmed.
 
+## Update Channels and Feature Sets
+
+The Updates page supports two channels. **Stable releases** compare semantic versions from GitLab Releases and install the exact selected release tag. **Feature branch** discovers remote branches, compares the local and remote commit IDs, and can switch the checkout to a configured feature set such as `feature/proxmox-power-actions`. The repository must have a clean worktree before either installation path runs.
+
+Branch profiles are configured as `label|branch|description`. The UI checks whether a selected branch contains the branch-switching updater and warns when switching to an older or incompatible branch could require Git CLI access to return. Update-check failures remain visible on the page instead of being treated as a successful idle check.
+
 
 ## ⚡ Live Power Flow Monitoring
 

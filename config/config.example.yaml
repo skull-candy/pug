@@ -1,7 +1,7 @@
 backend:
-  type: apcupsd
+  type: "apcupsd"
   command: ["apcaccess", "status", "localhost:3551"]
-  poll_interval_seconds: 3
+  poll_interval_seconds: 3.0
 
 snmp:
   enabled: true
@@ -31,10 +31,10 @@ mqtt:
   discovery_prefix: "homeassistant"
   username: ""
   password: ""
-  publish_interval_seconds: 30
+  publish_interval_seconds: 30.0
 
 logging:
-  level: INFO
+  level: "INFO"
   file_path: "/var/log/pug/pug.log"
   apcupsd_events_path: "/var/log/apcupsd.events"
   web_tail_lines: 300
@@ -53,10 +53,14 @@ update:
   gitlab_base_url: "https://git.vns.ae"
   project_path: "ahsan/pug"
   check_interval: "7d"
-  last_update_check: ""
-  latest_version: ""
-  latest_release_url: ""
-  latest_release_name: ""
+  last_update_check: "2026-09-01T07:12:20.796053+00:00"
+  latest_version: "v0.2.0"
+  latest_release_url: "https://git.vns.ae/ahsan/pug/-/releases/v0.2.0"
+  latest_release_name: "PowerPi UPS Gateway v0.2.0"
+  update_channel: "release"
+  selected_branch: "main"
+  branch_profiles: ["Core|main|Stable core gateway", "PVE Enablement|feature/proxmox-power-actions|Proxmox shutdown plus HA recovery and alerts"]
+  latest_branch_commit: ""
 
 notifications:
   discord_enabled: false

@@ -41,6 +41,14 @@ class UpdateSnapshot:
     finished_at: datetime | None = None
     output: list[str] = field(default_factory=list)
     error: str = ""
+    update_channel: str = "release"
+    current_branch: str = ""
+    selected_branch: str = "main"
+    current_commit: str = ""
+    target_commit: str = ""
+    available_branches: list[str] = field(default_factory=list)
+    branch_profiles: list[str] = field(default_factory=list)
+    branch_compatible: bool = True
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -58,6 +66,14 @@ class UpdateSnapshot:
             "finished_at": self.finished_at.isoformat() if self.finished_at else "",
             "output": list(self.output),
             "error": self.error,
+            "update_channel": self.update_channel,
+            "current_branch": self.current_branch,
+            "selected_branch": self.selected_branch,
+            "current_commit": self.current_commit,
+            "target_commit": self.target_commit,
+            "available_branches": list(self.available_branches),
+            "branch_profiles": list(self.branch_profiles),
+            "branch_compatible": self.branch_compatible,
         }
 
 
@@ -67,7 +83,19 @@ class UpdateManager:
         self._default_config = config or AppConfig()
         self.repo_path = Path(repo_path) if repo_path else Path(__file__).resolve().parents[2]
         self._lock = threading.Lock()
-        self._snapshot = snapshot_from_config(self._load_config())
+        initial = snapshot_from_config(self._load_config())
+        initial_branch = safe_current_branch(self.repo_path)
+        initial_commit = safe_git_commit(self.repo_path, "HEAD")
+        self._snapshot = replace(
+            initial,
+            current_branch=initial_branch,
+            current_commit=initial_commit,
+            update_available=(
+                initial_branch != initial.selected_branch or bool(initial.target_commit and initial_commit != initial.target_commit)
+                if initial.update_channel == "branch"
+                else initial.update_available
+            ),
+        )
 
     def run_background_checks(self, stop: threading.Event, poll_seconds: int = 3600, initial_delay_seconds: int = 15) -> None:
         if stop.wait(initial_delay_seconds):
@@ -95,6 +123,14 @@ class UpdateManager:
                 finished_at=self._snapshot.finished_at,
                 output=list(self._snapshot.output),
                 error=self._snapshot.error,
+                update_channel=self._snapshot.update_channel,
+                current_branch=self._snapshot.current_branch,
+                selected_branch=self._snapshot.selected_branch,
+                current_commit=self._snapshot.current_commit,
+                target_commit=self._snapshot.target_commit,
+                available_branches=list(self._snapshot.available_branches),
+                branch_profiles=list(self._snapshot.branch_profiles),
+                branch_compatible=self._snapshot.branch_compatible,
             )
 
     def check_if_due(self) -> bool:
@@ -114,46 +150,77 @@ class UpdateManager:
         if config.update.check_interval == "off":
             self._set(status="disabled", update_available=False, error="")
             return self.snapshot()
-        self._set(status="checking", error="", output=["Checking GitLab Releases..."])
+        label = "GitLab Releases" if config.update.update_channel == "release" else f"origin/{config.update.selected_branch}"
+        self._set(status="checking", error="", output=[f"Checking {label}..."])
         checked_at = datetime.now(timezone.utc)
         try:
-            result = check_for_update(config.update)
+            result = check_for_update(config.update) if config.update.update_channel == "release" else check_branch_update(self.repo_path, config.update.selected_branch)
         except Exception as exc:
-            LOGGER.info("GitLab release update check failed: %s", exc)
-            self._set(status="idle", checked_at=checked_at, finished_at=checked_at, error="", output=[])
+            LOGGER.info("update check failed: %s", exc)
+            self._set(status="failed", checked_at=checked_at, finished_at=checked_at, error=str(exc), output=[f"Update check failed: {exc}"])
             self._store_update_metadata(config, checked_at=checked_at)
             return self.snapshot()
-        latest_version = result["latest_version"]
-        update_available = is_newer_version(latest_version, __version__)
+        latest_version = result.get("latest_version", config.update.latest_version)
+        release_url = result.get("latest_release_url", "")
+        release_name = result.get("latest_release_name", "")
+        current_commit = result.get("current_commit", safe_git_commit(self.repo_path, "HEAD"))
+        target_commit = result.get("target_commit", "")
+        current = safe_current_branch(self.repo_path)
+        update_available = (
+            is_newer_version(latest_version, __version__)
+            if config.update.update_channel == "release"
+            else current != config.update.selected_branch or current_commit != target_commit
+        )
         self._set(
             status="available" if update_available else "current",
             update_available=update_available,
             latest_version=latest_version,
-            latest_release_url=result["latest_release_url"],
-            latest_release_name=result["latest_release_name"],
+            latest_release_url=release_url,
+            latest_release_name=release_name,
             gitlab_base_url=config.update.gitlab_base_url,
             project_path=config.update.project_path,
             check_interval=config.update.check_interval,
             checked_at=checked_at,
             finished_at=checked_at,
-            output=[
-                f"Installed version: {__version__}",
-                f"Latest release: {latest_version}",
-                f"Release page: {result['latest_release_url'] or '-'}",
-            ],
+            update_channel=config.update.update_channel,
+            current_branch=current,
+            selected_branch=config.update.selected_branch,
+            current_commit=current_commit,
+            target_commit=target_commit,
+            available_branches=list_remote_branches(self.repo_path),
+            branch_profiles=list(config.update.branch_profiles),
+            branch_compatible=bool(result.get("branch_compatible", True)),
+            output=(
+                [f"Installed version: {__version__}", f"Latest release: {latest_version}", f"Release page: {release_url or '-'}"]
+                if config.update.update_channel == "release"
+                else [f"Current branch: {current}", f"Selected branch: {config.update.selected_branch}", f"Current commit: {current_commit[:12]}", f"Remote commit: {target_commit[:12]}"]
+            ),
         )
         self._store_update_metadata(
             config,
             checked_at=checked_at,
             latest_version=latest_version,
-            latest_release_url=result["latest_release_url"],
-            latest_release_name=result["latest_release_name"],
+            latest_release_url=release_url,
+            latest_release_name=release_name,
+            latest_branch_commit=target_commit,
         )
         return self.snapshot()
 
+    def select_channel(self, channel: str, branch: str) -> UpdateSnapshot:
+        from pug.config import validate_config
+
+        config = self._load_config()
+        updated = replace(config, update=replace(config.update, update_channel=channel, selected_branch=branch, last_update_check=""))
+        validate_config(updated)
+        if self.config_path:
+            save_config(updated, self.config_path)
+        self._default_config = updated
+        self._refresh_from_config(updated)
+        return self.check(updated)
+
     def start_install(self) -> bool:
         with self._lock:
-            if self._snapshot.status == "installing":
+            if self._snapshot.status == "installing" or not self._snapshot.update_available or (self._snapshot.update_channel == "branch" and not self._snapshot.branch_compatible):
                 return False
             self._snapshot = replace(
                 self._snapshot,
@@ -167,7 +234,9 @@ class UpdateManager:
 
     def _install(self) -> None:
         try:
-            install_update(self.repo_path, self._append)
+            snapshot = self.snapshot()
+            target = snapshot.latest_version if snapshot.update_channel == "release" else snapshot.selected_branch
+            install_update(self.repo_path, self._append, channel=snapshot.update_channel, target=target)
         except Exception as exc:
             self._set(status="failed", error=str(exc), finished_at=datetime.now(timezone.utc))
             return
@@ -196,6 +265,9 @@ class UpdateManager:
                 project_path=current.project_path,
                 check_interval=current.check_interval,
                 checked_at=current.checked_at or self._snapshot.checked_at,
+                update_channel=current.update_channel,
+                selected_branch=current.selected_branch,
+                branch_profiles=list(current.branch_profiles),
             )
 
     def _store_update_metadata(
@@ -205,6 +277,7 @@ class UpdateManager:
         latest_version: str | None = None,
         latest_release_url: str | None = None,
         latest_release_name: str | None = None,
+        latest_branch_commit: str | None = None,
     ) -> None:
         if not self.config_path:
             return
@@ -214,6 +287,7 @@ class UpdateManager:
             latest_version=latest_version if latest_version is not None else config.update.latest_version,
             latest_release_url=latest_release_url if latest_release_url is not None else config.update.latest_release_url,
             latest_release_name=latest_release_name if latest_release_name is not None else config.update.latest_release_name,
+            latest_branch_commit=latest_branch_commit if latest_branch_commit is not None else config.update.latest_branch_commit,
         )
         try:
             save_config(replace(config, update=update), self.config_path)
@@ -234,7 +308,7 @@ def snapshot_from_config(config: AppConfig) -> UpdateSnapshot:
     latest_version = config.update.latest_version
     return UpdateSnapshot(
         status="disabled" if config.update.check_interval == "off" else "idle",
-        update_available=bool(latest_version and is_newer_version(latest_version, __version__)),
+        update_available=bool(latest_version and is_newer_version(latest_version, __version__)) if config.update.update_channel == "release" else False,
         installed_version=__version__,
         latest_version=latest_version,
         latest_release_url=config.update.latest_release_url,
@@ -243,6 +317,10 @@ def snapshot_from_config(config: AppConfig) -> UpdateSnapshot:
         project_path=config.update.project_path,
         check_interval=config.update.check_interval,
         checked_at=parse_datetime(config.update.last_update_check),
+        update_channel=config.update.update_channel,
+        selected_branch=config.update.selected_branch,
+        target_commit=config.update.latest_branch_commit,
+        branch_profiles=list(config.update.branch_profiles),
     )
 
 
@@ -270,6 +348,29 @@ def check_for_update(config: UpdateConfig) -> dict[str, str]:
         "latest_release_url": release_url or release_page_url(config.gitlab_base_url, config.project_path, tag_name),
         "latest_release_name": str(payload.get("name") or tag_name),
     }
+
+
+def check_branch_update(repo_path: Path, branch: str) -> dict[str, Any]:
+    ensure_git_repo(repo_path)
+    run_git(repo_path, ["fetch", "origin", "--prune"])
+    remote_ref = f"refs/remotes/origin/{branch}"
+    target = git_commit(repo_path, remote_ref)
+    probe = run_git(repo_path, ["show", f"{remote_ref}:src/pug/updater.py"], check=False)
+    compatible = probe.returncode == 0 and "def select_channel(" in probe.stdout
+    return {"current_commit": git_commit(repo_path, "HEAD"), "target_commit": target, "branch_compatible": compatible}
+
+
+def list_remote_branches(repo_path: Path) -> list[str]:
+    try:
+        result = run_git(repo_path, ["ls-remote", "--heads", "origin"])
+    except RuntimeError:
+        return []
+    branches = []
+    for line in result.stdout.splitlines():
+        _commit, separator, ref = line.partition("\t")
+        if separator and ref.startswith("refs/heads/"):
+            branches.append(ref.removeprefix("refs/heads/"))
+    return sorted(set(branches))
 
 
 def latest_release_api_url(gitlab_base_url: str, project_path: str) -> str:
@@ -354,14 +455,36 @@ def parse_datetime(value: str) -> datetime | None:
     return parsed
 
 
-def install_update(repo_path: Path, log: Any) -> None:
+def install_update(repo_path: Path, log: Any, channel: str = "branch", target: str = "") -> None:
     ensure_git_repo(repo_path)
-    branch = current_branch(repo_path)
-    remote_ref = best_remote_ref(repo_path, branch)
+    if run_git(repo_path, ["status", "--porcelain"]).stdout.strip():
+        raise RuntimeError("The repository has uncommitted changes; commit or stash them before switching or updating.")
     log("Fetching latest source...")
-    run_git(repo_path, ["fetch", "origin", "--prune"])
-    log(f"Fast-forwarding {branch} from {remote_ref}...")
-    run_git(repo_path, ["merge", "--ff-only", remote_ref])
+    run_git(repo_path, ["fetch", "origin", "--prune", "--tags"])
+    if channel == "release":
+        if not target:
+            raise RuntimeError("No release tag is available to install.")
+        release_ref = f"refs/tags/{target}"
+        git_commit(repo_path, release_ref)
+        log(f"Switching to exact release tag {target}...")
+        run_git(repo_path, ["switch", "--detach", release_ref])
+    elif channel == "branch":
+        if not target:
+            raise RuntimeError("No feature branch is selected.")
+        remote_ref = f"refs/remotes/origin/{target}"
+        git_commit(repo_path, remote_ref)
+        if safe_current_branch(repo_path) == target:
+            log(f"Fast-forwarding {target}...")
+            run_git(repo_path, ["merge", "--ff-only", remote_ref])
+        elif run_git(repo_path, ["show-ref", "--verify", f"refs/heads/{target}"], check=False).returncode == 0:
+            log(f"Switching to existing branch {target}...")
+            run_git(repo_path, ["switch", target])
+            run_git(repo_path, ["merge", "--ff-only", remote_ref])
+        else:
+            log(f"Creating local branch {target} from origin...")
+            run_git(repo_path, ["switch", "--create", target, "--track", f"origin/{target}"])
+    else:
+        raise RuntimeError(f"Unsupported update channel: {channel}")
     log("Installing package with current Python...")
     run_command([sys.executable, "-m", "pip", "install", "-e", str(repo_path)], repo_path)
 
@@ -371,8 +494,6 @@ def ensure_git_repo(repo_path: Path) -> None:
         raise RuntimeError(f"{repo_path} is not a git checkout")
     if not remote_url(repo_path):
         run_git(repo_path, ["remote", "add", "origin", PUBLIC_REPO_URL])
-    elif remote_url(repo_path) != PUBLIC_REPO_URL:
-        run_git(repo_path, ["remote", "set-url", "origin", PUBLIC_REPO_URL])
 
 
 def remote_url(repo_path: Path) -> str:
@@ -384,6 +505,26 @@ def current_branch(repo_path: Path) -> str:
     result = run_git(repo_path, ["rev-parse", "--abbrev-ref", "HEAD"])
     branch = result.stdout.strip()
     return "main" if branch == "HEAD" else branch
+
+
+def safe_current_branch(repo_path: Path) -> str:
+    try:
+        result = run_git(repo_path, ["symbolic-ref", "--short", "HEAD"], check=False)
+        return result.stdout.strip() or "detached release"
+    except RuntimeError:
+        return "unknown"
+
+
+def git_commit(repo_path: Path, ref: str) -> str:
+    result = run_git(repo_path, ["rev-parse", "--verify", f"{ref}^{{commit}}"])
+    return result.stdout.strip()
+
+
+def safe_git_commit(repo_path: Path, ref: str) -> str:
+    try:
+        return git_commit(repo_path, ref)
+    except RuntimeError:
+        return ""
 
 
 def best_remote_ref(repo_path: Path, branch: str) -> str:

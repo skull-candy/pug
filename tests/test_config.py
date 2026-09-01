@@ -84,3 +84,19 @@ def test_config_preserves_hash_inside_quoted_value(tmp_path) -> None:
     )
 
     assert load_config(path).mqtt.password == "abc#123"
+
+
+def test_config_rejects_unsafe_update_branch() -> None:
+    from pug.config import UpdateConfig
+
+    config = AppConfig(update=UpdateConfig(selected_branch="--upload-pack=bad"))
+
+    with pytest.raises(ConfigError, match="safe branch"):
+        validate_config(config)
+
+
+def test_config_list_preserves_commas_inside_quoted_profile(tmp_path) -> None:
+    path = tmp_path / "config.yaml"
+    path.write_text('update:\n  branch_profiles: ["PVE|feature/pve|Shutdown, HA, and alerts"]\n', encoding="utf-8")
+
+    assert load_config(path).update.branch_profiles == ["PVE|feature/pve|Shutdown, HA, and alerts"]

@@ -10,6 +10,7 @@ This file tracks known follow-up work. Update it with every codebase change, eve
 
 ## Done
 
+- Audited and corrected the updater so stable releases install exact tags and compatible feature sets can be selected and tracked as remote branches from the Updates page.
 - Scaffolded the production project structure.
 - Added apcupsd parsing and simulator state.
 - Added SNMP v1/v2c GET response path with safe read-only OID registry.

@@ -93,6 +93,15 @@ class UpdateConfig:
     latest_version: str = ""
     latest_release_url: str = ""
     latest_release_name: str = ""
+    update_channel: str = "release"
+    selected_branch: str = "main"
+    branch_profiles: list[str] = field(
+        default_factory=lambda: [
+            "Core|main|Stable core gateway",
+            "PVE Enablement|feature/proxmox-power-actions|Proxmox shutdown plus HA recovery and alerts",
+        ]
+    )
+    latest_branch_commit: str = ""
 
 
 @dataclass(frozen=True)
@@ -252,6 +261,18 @@ def config_from_mapping(data: dict[str, Any]) -> AppConfig:
             latest_version=str(update.get("latest_version", "")),
             latest_release_url=str(update.get("latest_release_url", "")),
             latest_release_name=str(update.get("latest_release_name", "")),
+            update_channel=str(update.get("update_channel", "release")),
+            selected_branch=str(update.get("selected_branch", "main")),
+            branch_profiles=list(
+                update.get(
+                    "branch_profiles",
+                    [
+                        "Core|main|Stable core gateway",
+                        "PVE Enablement|feature/proxmox-power-actions|Proxmox shutdown plus HA recovery and alerts",
+                    ],
+                )
+            ),
+            latest_branch_commit=str(update.get("latest_branch_commit", "")),
         ),
         notifications=NotificationConfig(
             discord_enabled=bool(notifications.get("discord_enabled", False)),
@@ -363,6 +384,14 @@ def validate_config(config: AppConfig) -> None:
         raise ConfigError("update.gitlab_base_url must not be empty")
     if not config.update.project_path:
         raise ConfigError("update.project_path must not be empty")
+    if config.update.update_channel not in {"release", "branch"}:
+        raise ConfigError("update.update_channel must be release or branch")
+    if not _valid_git_branch(config.update.selected_branch):
+        raise ConfigError("update.selected_branch is not a safe branch name")
+    for profile in config.update.branch_profiles:
+        parts = str(profile).split("|", 2)
+        if len(parts) != 3 or not parts[0].strip() or not _valid_git_branch(parts[1].strip()):
+            raise ConfigError("each update.branch_profiles entry must be label|branch|description")
     if config.power_actions.enabled and config.http.enabled and config.http.auth_mode == "disabled":
         raise ConfigError("HTTP authentication must be enabled before power_actions can be enabled")
     if config.notifications.smtp_security not in {"none", "starttls", "tls"}:
@@ -434,12 +463,20 @@ def _parse_simple_yaml(text: str) -> dict[str, Any]:
     return result
 
 
+def _valid_git_branch(value: str) -> bool:
+    if not value or value.startswith(("-", ".", "/")) or value.endswith((".", "/")):
+        return False
+    if any(token in value for token in ("..", "//", "@{", "\\", " ", "~", "^", ":", "?", "*", "[")):
+        return False
+    return all(character.isalnum() or character in "-._/" for character in value)
+
+
 def _parse_scalar(value: str) -> Any:
     if value.startswith("[") and value.endswith("]"):
         inner = value[1:-1].strip()
         if not inner:
             return []
-        return [_parse_scalar(part.strip()) for part in inner.split(",")]
+        return [_parse_scalar(part.strip()) for part in _split_list_items(inner)]
     if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
         return value[1:-1]
     lowered = value.lower()
@@ -452,6 +489,36 @@ def _parse_scalar(value: str) -> Any:
             return float(value)
         except ValueError:
             return value
+
+
+def _split_list_items(value: str) -> list[str]:
+    items: list[str] = []
+    current: list[str] = []
+    quote_character = ""
+    escaped = False
+    for character in value:
+        if escaped:
+            current.append(character)
+            escaped = False
+            continue
+        if character == "\\" and quote_character:
+            current.append(character)
+            escaped = True
+            continue
+        if character in {"'", '"'}:
+            if not quote_character:
+                quote_character = character
+            elif quote_character == character:
+                quote_character = ""
+            current.append(character)
+            continue
+        if character == "," and not quote_character:
+            items.append("".join(current))
+            current = []
+            continue
+        current.append(character)
+    items.append("".join(current))
+    return items
 
 
 def parse_command(value: str) -> list[str]:

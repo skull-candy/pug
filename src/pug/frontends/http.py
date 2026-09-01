@@ -7,7 +7,7 @@ import ipaddress
 import json
 import logging
 import subprocess
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import datetime, timedelta, timezone
 from importlib.resources import files
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -242,6 +242,16 @@ class HttpFrontend:
                 if self.path == "/api/updates/check":
                     self._send_json(frontend.updater.check().to_dict())
                     return
+                if self.path == "/api/updates/channel":
+                    length = int(self.headers.get("Content-Length", "0"))
+                    form = parse_qs(self.rfile.read(length).decode("utf-8"), keep_blank_values=True)
+                    try:
+                        snapshot = frontend.updater.select_channel(_field(form, "channel"), _field(form, "branch"))
+                    except (ConfigError, OSError, RuntimeError, ValueError) as exc:
+                        self._send_json({"ok": False, "message": str(exc)}, status=400)
+                        return
+                    self._send_json({"ok": True, "message": "Update channel saved.", "update": snapshot.to_dict()})
+                    return
                 if self.path == "/api/updates/install":
                     started = frontend.updater.start_install()
                     self._send_json(
@@ -409,7 +419,7 @@ def config_from_form(form: dict[str, list[str]], current_config: AppConfig | Non
     update_gitlab_base_url = _field(form, "update_gitlab_base_url") or update_defaults.gitlab_base_url
     update_project_path = _field(form, "update_project_path") or update_defaults.project_path
     if update_gitlab_base_url != update_defaults.gitlab_base_url or update_project_path != update_defaults.project_path:
-        update_defaults = UpdateConfig(gitlab_base_url=update_gitlab_base_url, project_path=update_project_path)
+        update_defaults = replace(update_defaults, gitlab_base_url=update_gitlab_base_url, project_path=update_project_path)
     config = AppConfig(
         backend=BackendConfig(
             type=_field(form, "backend_type"),
@@ -470,6 +480,10 @@ def config_from_form(form: dict[str, list[str]], current_config: AppConfig | Non
             latest_version=update_defaults.latest_version,
             latest_release_url=update_defaults.latest_release_url,
             latest_release_name=update_defaults.latest_release_name,
+            update_channel=_field(form, "update_channel") or update_defaults.update_channel,
+            selected_branch=_field(form, "update_selected_branch") or update_defaults.selected_branch,
+            branch_profiles=[line.strip() for line in _field(form, "update_branch_profiles").splitlines() if line.strip()] or update_defaults.branch_profiles,
+            latest_branch_commit=update_defaults.latest_branch_commit,
         ),
         notifications=NotificationConfig(
             discord_enabled=_checked(form, "notifications_discord_enabled"),
@@ -582,6 +596,10 @@ def config_to_public_dict(config: AppConfig) -> dict[str, Any]:
             "latest_version": config.update.latest_version,
             "latest_release_url": config.update.latest_release_url,
             "latest_release_name": config.update.latest_release_name,
+            "update_channel": config.update.update_channel,
+            "selected_branch": config.update.selected_branch,
+            "branch_profiles": config.update.branch_profiles,
+            "latest_branch_commit": config.update.latest_branch_commit,
         },
         "notifications": {**asdict(config.notifications), "smtp_password_file": config.notifications.smtp_password_file, "discord_webhook_url_file": config.notifications.discord_webhook_url_file},
         "power_actions": asdict(config.power_actions),
@@ -891,8 +909,10 @@ def page_shell(title: str, active: str, content: str, auto_refresh: bool = False
         const show = Boolean(payload.update_available);
         banner.classList.toggle("show", show);
         if (show) {{
-          bannerText.textContent = `New version available: ${{payload.latest_version}}. Installed: ${{payload.installed_version}}.`;
-          bannerLink.href = payload.latest_release_url || "/updates";
+          bannerText.textContent = payload.update_channel === "branch"
+            ? `Feature branch update available: ${{payload.selected_branch}}.`
+            : `New version available: ${{payload.latest_version}}. Installed: ${{payload.installed_version}}.`;
+          bannerLink.href = payload.update_channel === "release" && payload.latest_release_url ? payload.latest_release_url : "/updates";
         }}
       }} catch (error) {{}}
     }};
@@ -1390,8 +1410,22 @@ def render_logs_page(config: AppConfig, lines: list[str], apcupsd_event_lines: l
 
 def render_updates_page(snapshot: UpdateSnapshot) -> str:
     output = "\n".join(_escape(line.rstrip("\n")) for line in snapshot.output)
-    install_disabled = " disabled" if snapshot.status == "installing" or not snapshot.update_available else ""
+    install_disabled = " disabled" if snapshot.status == "installing" or not snapshot.update_available or (snapshot.update_channel == "branch" and not snapshot.branch_compatible) else ""
     release_link = f'<a id="update-release-link" href="{_escape(snapshot.latest_release_url or "/updates")}">{_escape(snapshot.latest_release_url or "-")}</a>'
+    profile_labels: dict[str, str] = {}
+    profile_descriptions: dict[str, str] = {}
+    for profile in snapshot.branch_profiles:
+        parts = profile.split("|", 2)
+        if len(parts) == 3:
+            profile_labels[parts[1]] = parts[0]
+            profile_descriptions[parts[1]] = parts[2]
+    branches = sorted(set([snapshot.selected_branch, *snapshot.available_branches, *profile_labels]))
+    branch_options = "".join(
+        f'<option value="{_escape(branch)}"{_selected(snapshot.selected_branch, branch)}>{_escape(profile_labels.get(branch, branch))} — {_escape(branch)}</option>'
+        for branch in branches if branch
+    )
+    selected_description = profile_descriptions.get(snapshot.selected_branch, "Custom remote feature branch")
+    compatibility = "Compatible with Web UI branch switching" if snapshot.branch_compatible else "Compatibility warning: this branch does not contain the branch switcher, so returning may require Git CLI access."
     return page_shell(
         "Updates",
         "updates",
@@ -1400,7 +1434,7 @@ def render_updates_page(snapshot: UpdateSnapshot) -> str:
           <div class="section-head">
             <div>
               <h1>Updates</h1>
-              <p class="muted">Checks GitLab Releases from {_escape(snapshot.gitlab_base_url)} for {_escape(snapshot.project_path)}.</p>
+              <p class="muted">Use exact GitLab Releases tags for stable updates, or track a remote branch for a specific feature set.</p>
             </div>
             <span id="update-status-pill" class="health {'warn' if snapshot.update_available else 'ok'}">{_escape(snapshot.status.title())}</span>
           </div>
@@ -1411,6 +1445,11 @@ def render_updates_page(snapshot: UpdateSnapshot) -> str:
             <dl class="detail-item"><dt>Release Page</dt><dd>{release_link}</dd></dl>
             <dl class="detail-item"><dt>Check Interval</dt><dd id="update-interval">{_escape(update_interval_label(snapshot.check_interval))}</dd></dl>
             <dl class="detail-item"><dt>Last Check</dt><dd id="update-checked">{_escape(_format_time(snapshot.checked_at))}</dd></dl>
+            <dl class="detail-item"><dt>Channel</dt><dd id="update-channel">{_escape(snapshot.update_channel.title())}</dd></dl>
+            <dl class="detail-item"><dt>Current Branch</dt><dd id="update-current-branch">{_escape(snapshot.current_branch or "-")}</dd></dl>
+            <dl class="detail-item"><dt>Selected Branch</dt><dd id="update-selected-branch">{_escape(snapshot.selected_branch or "-")}</dd></dl>
+            <dl class="detail-item"><dt>Current Commit</dt><dd id="update-current-commit">{_escape(snapshot.current_commit[:12] or "-")}</dd></dl>
+            <dl class="detail-item"><dt>Target Commit</dt><dd id="update-target-commit">{_escape(snapshot.target_commit[:12] or "-")}</dd></dl>
           </div>
           <p id="update-message" class="muted">{_escape(snapshot.error)}</p>
           <div class="actions">
@@ -1419,10 +1458,21 @@ def render_updates_page(snapshot: UpdateSnapshot) -> str:
           </div>
         </section>
         <section>
+          <h2>Update Channel and Feature Set</h2>
+          <p class="muted">Release mode installs the exact release tag. Branch mode switches the checkout to the selected remote branch and follows its commits.</p>
+          <div class="grid">
+            <label>Update channel<select id="update-channel-select"><option value="release"{_selected(snapshot.update_channel, 'release')}>Stable releases</option><option value="branch"{_selected(snapshot.update_channel, 'branch')}>Feature branch</option></select></label>
+            <label>Feature branch<select id="update-branch-select">{branch_options}</select></label>
+          </div>
+          <p id="branch-description" class="hint">{_escape(selected_description)}</p>
+          <p id="branch-compatibility" class="{'hint' if snapshot.branch_compatible else 'health warn'}">{_escape(compatibility)}</p>
+          <button id="save-update-channel" class="button secondary" type="button">Save Channel and Check</button>
+        </section>
+        <section>
           <div class="section-head">
             <div>
               <h2>Update Progress</h2>
-              <p class="muted">Update detection uses GitLab Releases. Install uses the local checkout, reinstalls PUG, then restarts the systemd service.</p>
+              <p class="muted">Installation requires a clean Git worktree, fetches the selected tag or branch, reinstalls PUG, then restarts the systemd service.</p>
             </div>
           </div>
           <pre id="update-output" class="log-view">{output or 'No update activity yet.'}</pre>
@@ -1440,6 +1490,12 @@ def render_updates_page(snapshot: UpdateSnapshot) -> str:
             message: document.getElementById("update-message"),
             output: document.getElementById("update-output"),
             install: document.getElementById("install-update"),
+            channel: document.getElementById("update-channel"),
+            currentBranch: document.getElementById("update-current-branch"),
+            selectedBranch: document.getElementById("update-selected-branch"),
+            currentCommit: document.getElementById("update-current-commit"),
+            targetCommit: document.getElementById("update-target-commit"),
+            compatibility: document.getElementById("branch-compatibility"),
           }};
           const text = (value, fallback = "-") => value === null || value === undefined || value === "" ? fallback : String(value);
           const formatTime = (value) => text(value).replace("T", " ").replace("+00:00", " UTC");
@@ -1455,9 +1511,16 @@ def render_updates_page(snapshot: UpdateSnapshot) -> str:
             if (payload.latest_release_url) fields.releaseLink.href = payload.latest_release_url;
             fields.interval.textContent = intervalLabel(payload.check_interval);
             fields.checked.textContent = formatTime(payload.checked_at);
+            fields.channel.textContent = text(payload.update_channel).replace(/^./, c => c.toUpperCase());
+            fields.currentBranch.textContent = text(payload.current_branch);
+            fields.selectedBranch.textContent = text(payload.selected_branch);
+            fields.currentCommit.textContent = text(payload.current_commit).slice(0, 12);
+            fields.targetCommit.textContent = text(payload.target_commit).slice(0, 12);
+            fields.compatibility.textContent = payload.branch_compatible ? "Compatible with Web UI branch switching" : "Compatibility warning: this branch does not contain the branch switcher, so returning may require Git CLI access.";
+            fields.compatibility.className = payload.branch_compatible ? "hint" : "health warn";
             fields.message.textContent = text(payload.error, "");
             fields.output.textContent = payload.output && payload.output.length ? payload.output.join("\\n") : "No update activity yet.";
-            fields.install.disabled = installing || !payload.update_available;
+            fields.install.disabled = installing || !payload.update_available || (payload.update_channel === "branch" && !payload.branch_compatible);
           }};
           const status = async () => {{
             const response = await fetch("/api/updates", {{ cache: "no-store" }});
@@ -1467,8 +1530,21 @@ def render_updates_page(snapshot: UpdateSnapshot) -> str:
             const response = await fetch("/api/updates/check", {{ method: "POST" }});
             if (response.ok) update(await response.json());
           }});
+          document.getElementById("save-update-channel").addEventListener("click", async () => {{
+            const channel = document.getElementById("update-channel-select").value;
+            const branch = document.getElementById("update-branch-select").value;
+            if (channel === "branch" && !confirm(`Switch update tracking to origin/${{branch}}?\n\nInstalling later will change the checked-out branch and restart PUG.`)) return;
+            const body = new URLSearchParams({{channel, branch}});
+            const response = await fetch("/api/updates/channel", {{method:"POST", headers:{{"Content-Type":"application/x-www-form-urlencoded"}}, body}});
+            const payload = await response.json();
+            if (!response.ok || !payload.ok) {{ alert(payload.message || "Unable to save update channel."); return; }}
+            update(payload.update);
+          }});
           fields.install.addEventListener("click", async () => {{
-            if (!confirm("Download and install the latest PUG update?\\n\\nThe service will restart after installation.")) return;
+            const channel = document.getElementById("update-channel-select").value;
+            const branch = document.getElementById("update-branch-select").value;
+            const target = channel === "release" ? "the exact latest release tag" : `origin/${{branch}}`;
+            if (!confirm(`Download and install ${{target}}?\\n\\nThe Git checkout may switch revisions and the service will restart.`)) return;
             const response = await fetch("/api/updates/install", {{ method: "POST" }});
             if (response.ok) {{
               const payload = await response.json();
@@ -1952,7 +2028,13 @@ def render_config_form(config: AppConfig) -> str:
           <option value="7d"{_selected(config.update.check_interval, "7d")}>7 days</option>
         </select>
       </label>
+      <label>Default update channel
+        <select name="update_channel"><option value="release"{_selected(config.update.update_channel, 'release')}>Stable releases</option><option value="branch"{_selected(config.update.update_channel, 'branch')}>Feature branch</option></select>
+      </label>
+      <label>Selected branch <input name="update_selected_branch" value="{_escape(config.update.selected_branch)}"></label>
     </div>
+    <label>Branch profiles<textarea name="update_branch_profiles" rows="4">{_escape(chr(10).join(config.update.branch_profiles))}</textarea></label>
+    <p class="hint">One profile per line: label|branch|description. Branch names are validated and remote branches are also discovered on the Updates page.</p>
   </fieldset>
 
   <fieldset>
