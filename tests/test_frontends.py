@@ -130,7 +130,7 @@ def test_dashboard_has_modern_sections_and_no_settings_form() -> None:
     assert '<meta http-equiv="refresh" content="30">' not in page
     assert "Administration" in page
     assert "Developed By: Ahsan Muhammad" in page
-    assert "Version 0.1.7" in page
+    assert "Version 0.2.2" in page
     assert 'id="update-banner-text"' in page
     assert "Line / AVR path active" in page
     assert "Line / AVR" in page
@@ -261,6 +261,9 @@ def test_updates_page_contains_check_and_install_actions() -> None:
     assert "Download and Install" in page
     assert "/api/updates/check" in page
     assert "/api/updates/install" in page
+    assert "Update Channel and Feature Set" in page
+    assert "Stable releases" in page
+    assert "/api/updates/channel" in page
 
 
 def test_logs_page_renders_bounded_tail(tmp_path) -> None:
