@@ -140,6 +140,8 @@ class HttpFrontend:
                         self._send_json({"error": "power action manager unavailable"}, status=503)
                     else:
                         self._send(200, "text/html; charset=utf-8", render_power_actions_page(config, frontend.power_actions.snapshot().to_dict()).encode())
+                elif self.path == "/proxmox-settings":
+                    self._send(200, "text/html; charset=utf-8", render_proxmox_settings_page(config).encode())
                 elif self.path == "/raw":
                     self._send(
                         200,
@@ -282,6 +284,19 @@ class HttpFrontend:
                         self._send_json({"ok": ok, "results": results, "message": "Notification test completed."}, status=200 if ok else 502)
                     else:
                         self._send_json({"error": "not found"}, status=404)
+                    return
+                if self.path == "/proxmox-config":
+                    length = int(self.headers.get("Content-Length", "0"))
+                    form = parse_qs(self.rfile.read(length).decode("utf-8"), keep_blank_values=True)
+                    try:
+                        config = proxmox_config_from_form(form, frontend.current_config())
+                        save_config(config, frontend.config_path)
+                        frontend.config = config
+                    except (ConfigError, ValueError) as exc:
+                        self._send(400, "text/html; charset=utf-8", render_message_page("Proxmox Configuration Error", str(exc), frontend.current_config(), "/proxmox-settings").encode())
+                        return
+                    self._send(200, "text/html; charset=utf-8", render_message_page("Proxmox Configuration Saved", f"Proxmox, HA, and alert settings were saved. Restarting the {SERVICE_NAME} service.", config, "/proxmox-settings").encode())
+                    schedule_service_restart()
                     return
                 if self.path == "/homeassistant/rediscover":
                     if not config.mqtt.enabled:
@@ -531,6 +546,57 @@ def config_from_form(form: dict[str, list[str]], current_config: AppConfig | Non
             state_file_path=_field(form, "power_actions_state_file_path"),
         ) if "power_actions_minimum_on_battery_seconds" in form else (current_config.power_actions if current_config else PowerActionsConfig()),
     )
+    validate_config(config)
+    return config
+
+
+def proxmox_config_from_form(form: dict[str, list[str]], current_config: AppConfig) -> AppConfig:
+    notifications = NotificationConfig(
+        discord_enabled=_checked(form, "notifications_discord_enabled"),
+        discord_webhook_url_file=_field(form, "notifications_discord_webhook_url_file"),
+        email_enabled=_checked(form, "notifications_email_enabled"),
+        smtp_host=_field(form, "notifications_smtp_host"),
+        smtp_port=int(_field(form, "notifications_smtp_port")),
+        smtp_security=_field(form, "notifications_smtp_security"),
+        smtp_username=_field(form, "notifications_smtp_username"),
+        smtp_password_file=_field(form, "notifications_smtp_password_file"),
+        email_from=_field(form, "notifications_email_from"),
+        email_recipients=parse_network_list(_field(form, "notifications_email_recipients")),
+        minimum_severity=_field(form, "notifications_minimum_severity"),
+        timeout_seconds=int(_field(form, "notifications_timeout_seconds")),
+    )
+    power_actions = PowerActionsConfig(
+        enabled=_checked(form, "power_actions_enabled"),
+        armed=_checked(form, "power_actions_armed"),
+        dry_run=_checked(form, "power_actions_dry_run"),
+        minimum_on_battery_seconds=int(_field(form, "power_actions_minimum_on_battery_seconds")),
+        battery_charge_percent=int(_field(form, "power_actions_battery_charge_percent")),
+        runtime_minutes=int(_field(form, "power_actions_runtime_minutes")),
+        threshold_mode=_field(form, "power_actions_threshold_mode"),
+        consecutive_samples=int(_field(form, "power_actions_consecutive_samples")),
+        maximum_state_age_seconds=int(_field(form, "power_actions_maximum_state_age_seconds")),
+        rearm_after_online_seconds=int(_field(form, "power_actions_rearm_after_online_seconds")),
+        emergency_enabled=_checked(form, "power_actions_emergency_enabled"),
+        emergency_battery_charge_percent=int(_field(form, "power_actions_emergency_battery_charge_percent")),
+        emergency_runtime_minutes=int(_field(form, "power_actions_emergency_runtime_minutes")),
+        proceed_if_ha_preflight_failed=_checked(form, "power_actions_proceed_if_ha_preflight_failed"),
+        proxmox_servers=[line.strip() for line in _field(form, "power_actions_proxmox_servers").splitlines() if line.strip()],
+        verify_tls=_checked(form, "power_actions_verify_tls"),
+        ca_certificate_path=_field(form, "power_actions_ca_certificate_path"),
+        request_timeout_seconds=int(_field(form, "power_actions_request_timeout_seconds")),
+        delay_between_nodes_seconds=int(_field(form, "power_actions_delay_between_nodes_seconds")),
+        ha_disarm_before_shutdown=_checked(form, "power_actions_ha_disarm_before_shutdown"),
+        ha_disarm_mode=_field(form, "power_actions_ha_disarm_mode"),
+        ha_recovery_mode=_field(form, "power_actions_ha_recovery_mode"),
+        ha_require_all_nodes=_checked(form, "power_actions_ha_require_all_nodes"),
+        ha_require_quorum=_checked(form, "power_actions_ha_require_quorum"),
+        ha_require_storage_healthy=_checked(form, "power_actions_ha_require_storage_healthy"),
+        ha_require_ceph_healthy=_checked(form, "power_actions_ha_require_ceph_healthy"),
+        ha_health_stable_seconds=int(_field(form, "power_actions_ha_health_stable_seconds")),
+        rearm_only_if_pug_disarmed_ha=_checked(form, "power_actions_rearm_only_if_pug_disarmed_ha"),
+        state_file_path=_field(form, "power_actions_state_file_path"),
+    )
+    config = replace(current_config, notifications=notifications, power_actions=power_actions)
     validate_config(config)
     return config
 
@@ -879,6 +945,7 @@ def page_shell(title: str, active: str, content: str, auto_refresh: bool = False
           <a class="{_active(active, 'raw')}" href="/raw">Raw Stats</a>
           <a class="{_active(active, 'diagnostics')}" href="/diagnostics">Diagnostics</a>
           <a class="{_active(active, 'power-actions')}" href="/power-actions">Power Actions</a>
+          <a class="{_active(active, 'proxmox-settings')}" href="/proxmox-settings">Proxmox Settings</a>
           <a class="{_active(active, 'settings')}" href="/settings">Settings</a>
           <a class="{_active(active, 'logs')}" href="/logs">Logs</a>
           <a class="{_active(active, 'updates')}" href="/updates">Updates</a>
@@ -1222,7 +1289,7 @@ def _active(active: str, page: str) -> str:
 
 
 def _admin_active(active: str) -> str:
-    return "active" if active in {"raw", "diagnostics", "power-actions", "settings", "logs", "updates"} else ""
+    return "active" if active in {"raw", "diagnostics", "power-actions", "proxmox-settings", "settings", "logs", "updates"} else ""
 
 
 def _format_time(value: datetime | None) -> str:
@@ -1529,6 +1596,9 @@ def render_updates_page(snapshot: UpdateSnapshot) -> str:
           document.getElementById("check-updates").addEventListener("click", async () => {{
             const response = await fetch("/api/updates/check", {{ method: "POST" }});
             if (response.ok) update(await response.json());
+          }});
+          document.getElementById("update-branch-select").addEventListener("change", () => {{
+            document.getElementById("update-channel-select").value = "branch";
           }});
           document.getElementById("save-update-channel").addEventListener("click", async () => {{
             const channel = document.getElementById("update-channel-select").value;
@@ -1928,7 +1998,7 @@ def resolve_timezone(timezone_name: str) -> tuple[timezone | ZoneInfo, str]:
         return timezone.utc, "UTC"
 
 
-def render_config_form(config: AppConfig) -> str:
+def _render_full_config_form(config: AppConfig) -> str:
     return f"""<form method="post" action="/config">
   <fieldset>
     <legend>Backend</legend>
@@ -2106,6 +2176,29 @@ def render_config_form(config: AppConfig) -> str:
 
   <button type="submit">Save Configuration</button>
 </form>"""
+
+
+def _proxmox_form_sections(config: AppConfig) -> str:
+    full = _render_full_config_form(config)
+    start = full.index('  <fieldset>\n    <legend>Discord and Email Alerts</legend>')
+    end = full.index('  <button type="submit">Save Configuration</button>', start)
+    return full[start:end]
+
+
+def render_config_form(config: AppConfig) -> str:
+    full = _render_full_config_form(config)
+    sections = _proxmox_form_sections(config)
+    replacement = '  <fieldset><legend>Proxmox and Alerts</legend><p class="hint">Proxmox shutdown, HA recovery, Discord, and email settings have moved to their own page.</p><a class="button secondary" href="/proxmox-settings">Open Proxmox Settings</a></fieldset>\n\n'
+    return full.replace(sections, replacement)
+
+
+def render_proxmox_settings_page(config: AppConfig) -> str:
+    form = f'<form method="post" action="/proxmox-config">{_proxmox_form_sections(config)}<button type="submit">Save Proxmox Configuration</button></form>'
+    return page_shell(
+        "Proxmox Settings",
+        "proxmox-settings",
+        f'<section><h1>Proxmox Settings</h1><p class="muted">Configure Proxmox nodes, shutdown criteria, HA freeze and recovery, emergency behavior, Discord, and email alerts. Start with dry-run enabled.</p>{form}</section>',
+    )
 
 
 def render_message_page(title: str, message: str, config: AppConfig, back_href: str = "/ui") -> str:

@@ -97,6 +97,7 @@ HTTP defaults to port `8080`:
 - `http://<host>:8080/logs` bounded PUG log and apcupsd event log tail view
 - `http://<host>:8080/updates` check, download, and install updates from the public repository
 - `http://<host>:8080/power-actions` Proxmox shutdown, HA recovery, and notification status
+- `http://<host>:8080/proxmox-settings` Proxmox nodes, shutdown policy, HA recovery, Discord, and email configuration
 
 ## Proxmox Power Actions
 

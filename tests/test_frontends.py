@@ -15,6 +15,7 @@ from pug.frontends.http import (
     render_diagnostics_page,
     render_logs_page,
     render_power_actions_page,
+    render_proxmox_settings_page,
     render_raw_stats_page,
     render_settings_page,
     render_updates_page,
@@ -131,7 +132,7 @@ def test_dashboard_has_modern_sections_and_no_settings_form() -> None:
     assert '<meta http-equiv="refresh" content="30">' not in page
     assert "Administration" in page
     assert "Developed By: Ahsan Muhammad" in page
-    assert "Version 0.2.1" in page
+    assert "Version 0.2.3" in page
     assert 'id="update-banner-text"' in page
     assert "Line / AVR path active" in page
     assert "Line / AVR" in page
@@ -200,9 +201,22 @@ def test_settings_page_contains_configuration_form() -> None:
     assert "7 days" in page
     assert "Authentication" in page
     assert "No-auth IPs/networks" in page
+    assert "Discord and Email Alerts" not in page
+    assert "Proxmox Power Actions" not in page
+    assert "Open Proxmox Settings" in page
+    assert 'href="/proxmox-settings"' in page
+
+
+def test_proxmox_settings_page_contains_dedicated_configuration() -> None:
+    page = render_proxmox_settings_page(AppConfig())
+
+    assert "Proxmox Settings" in page
     assert "Discord and Email Alerts" in page
     assert "Proxmox Power Actions" in page
     assert "Fully automatic (safe)" in page
+    assert 'action="/proxmox-config"' in page
+    assert "Save Proxmox Configuration" in page
+    assert 'class="active" href="/proxmox-settings"' in page
 
 
 def test_power_actions_page_contains_guarded_controls() -> None:
