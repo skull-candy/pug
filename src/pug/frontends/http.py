@@ -1396,6 +1396,9 @@ def render_updates_page(snapshot: UpdateSnapshot) -> str:
             const response = await fetch("/api/updates/check", {{ method: "POST" }});
             if (response.ok) update(await response.json());
           }});
+          document.getElementById("update-branch-select").addEventListener("change", () => {{
+            document.getElementById("update-channel-select").value = "branch";
+          }});
           document.getElementById("save-update-channel").addEventListener("click", async () => {{
             const channel = document.getElementById("update-channel-select").value;
             const branch = document.getElementById("update-branch-select").value;

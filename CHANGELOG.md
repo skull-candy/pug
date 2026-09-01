@@ -9,6 +9,7 @@ This project follows the spirit of Keep a Changelog. Update this file for every 
 ### Added
 
 - Fixed the core `main` updater: stable updates now install the exact release tag, feature sets can be selected as compatible remote branches, update failures remain visible, and the application version is now `0.2.2`.
+- Made selecting a feature profile automatically switch the updater from Release to Branch mode and bumped the core version to `0.2.4`.
 - Initial project scaffold with apcupsd collector, simulator, normalized UPS state, SNMP BER/codec support, OID registry, APC PowerNet mappings, RFC1628 mappings, docs, systemd service, and tests.
 - `TODO.md` maintenance file and contribution rule requiring both `CHANGELOG.md` and `TODO.md` to stay current on every codebase update.
 - Basic SNMP GETNEXT support using numeric OID ordering, plus tests for walk-style resolution.
