@@ -9,6 +9,7 @@ from pug.updater import (
     UpdateSnapshot,
     compare_versions,
     check_branch_update,
+    discover_repo_path,
     install_update,
     is_newer_version,
     latest_release_api_url,
@@ -32,7 +33,7 @@ def test_update_snapshot_serializes_for_web_ui() -> None:
 
     assert payload["status"] == "available"
     assert payload["update_available"] is True
-    assert payload["installed_version"] == "0.2.5"
+    assert payload["installed_version"] == "0.2.6"
     assert payload["latest_version"] == "v1.0.0"
     assert payload["latest_release_url"] == "https://git.vns.ae/ahsan/pug/-/releases/v1.0.0"
     assert payload["checked_at"] == "2026-07-04T12:00:00+00:00"
@@ -45,6 +46,18 @@ def test_update_manager_defaults_to_gitlab_releases() -> None:
     assert snapshot.gitlab_base_url == DEFAULT_GITLAB_BASE_URL
     assert snapshot.project_path == "ahsan/pug"
     assert snapshot.check_interval == "7d"
+
+
+def test_repo_discovery_uses_checkout_above_config(tmp_path, monkeypatch) -> None:
+    checkout = tmp_path / "pug"
+    (checkout / ".git").mkdir(parents=True)
+    config_path = checkout / "config" / "config.yaml"
+    config_path.parent.mkdir()
+    elsewhere = tmp_path / "installed-package"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+
+    assert discover_repo_path(config_path) == checkout.resolve()
 
 
 def test_latest_release_api_url_encodes_project_path() -> None:
@@ -148,6 +161,7 @@ def test_release_install_switches_to_exact_tag(tmp_path, monkeypatch) -> None:
     _origin, seed, checkout = _repo_with_remote(tmp_path)
     _git(seed, "tag", "v2.0.0")
     _git(seed, "push", "origin", "v2.0.0")
+    (checkout / "runtime.output").write_text("keep me", encoding="utf-8")
     original_run = __import__("pug.updater", fromlist=["run_command"]).run_command
 
     def skip_pip(command, repo_path, check=True):
@@ -161,6 +175,7 @@ def test_release_install_switches_to_exact_tag(tmp_path, monkeypatch) -> None:
 
     assert _git(checkout, "rev-parse", "HEAD") == _git(checkout, "rev-list", "-n", "1", "v2.0.0")
     assert subprocess.run(["git", "-C", str(checkout), "symbolic-ref", "-q", "HEAD"]).returncode != 0
+    assert (checkout / "runtime.output").read_text(encoding="utf-8") == "keep me"
     assert any("exact release tag v2.0.0" in line for line in output)
 
 

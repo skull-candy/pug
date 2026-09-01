@@ -9,6 +9,7 @@ This file tracks known follow-up work. Update it with every codebase change, eve
 
 ## Done
 
+- Fixed installed-package repository discovery so Web updates operate on the service checkout without generated/untracked runtime files blocking installation.
 - Fixed Web updates on older pip versions and added persistent updater logs plus visible browser, API, and command failure details.
 - Made feature-profile selection automatically choose the Branch update channel.
 - Audited and corrected the updater so stable releases install exact tags and compatible feature sets can be selected and tracked as remote branches from the Updates page.

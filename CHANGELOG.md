@@ -8,6 +8,7 @@ This project follows the spirit of Keep a Changelog. Update this file for every 
 
 ### Added
 
+- Fixed repository discovery after a non-editable install so the Web updater targets the service checkout (for example `/opt/pug`) instead of the virtual environment's `site-packages` directory, and stopped generated/untracked runtime files from blocking updates; bumped the version to `0.2.6`.
 - Fixed Web updates on older pip versions by replacing unsupported editable installs with normal forced reinstalls; persisted updater activity across service restarts and surfaced browser/API/command failures for the `0.2.5` release.
 - Fixed the core `main` updater: stable updates now install the exact release tag, feature sets can be selected as compatible remote branches, update failures remain visible, and the application version is now `0.2.2`.
 - Made selecting a feature profile automatically switch the updater from Release to Branch mode and bumped the core version to `0.2.4`.
