@@ -80,12 +80,14 @@ class UpdateSnapshot:
 class UpdateManager:
     def __init__(self, config_path: str | Path | None = None, config: AppConfig | None = None, repo_path: str | Path | None = None) -> None:
         self.config_path = Path(config_path) if config_path else None
+        self.update_log_path = self.config_path.parent / "update.log" if self.config_path else None
         self._default_config = config or AppConfig()
         self.repo_path = Path(repo_path) if repo_path else Path(__file__).resolve().parents[2]
         self._lock = threading.Lock()
         initial = snapshot_from_config(self._load_config())
         initial_branch = safe_current_branch(self.repo_path)
         initial_commit = safe_git_commit(self.repo_path, "HEAD")
+        persisted_output = self._read_update_log()
         self._snapshot = replace(
             initial,
             current_branch=initial_branch,
@@ -95,6 +97,7 @@ class UpdateManager:
                 if initial.update_channel == "branch"
                 else initial.update_available
             ),
+            output=persisted_output or initial.output,
         )
 
     def run_background_checks(self, stop: threading.Event, poll_seconds: int = 3600, initial_delay_seconds: int = 15) -> None:
@@ -151,13 +154,15 @@ class UpdateManager:
             self._set(status="disabled", update_available=False, error="")
             return self.snapshot()
         label = "GitLab Releases" if config.update.update_channel == "release" else f"origin/{config.update.selected_branch}"
-        self._set(status="checking", error="", output=[f"Checking {label}..."])
+        self._reset_update_log(f"Checking {label}...")
+        self._set(status="checking", error="", output=self._read_update_log() or [f"Checking {label}..."])
         checked_at = datetime.now(timezone.utc)
         try:
             result = check_for_update(config.update) if config.update.update_channel == "release" else check_branch_update(self.repo_path, config.update.selected_branch)
         except Exception as exc:
-            LOGGER.info("update check failed: %s", exc)
-            self._set(status="failed", checked_at=checked_at, finished_at=checked_at, error=str(exc), output=[f"Update check failed: {exc}"])
+            LOGGER.exception("update check failed")
+            self._append(f"Update check failed: {exc}")
+            self._set(status="failed", checked_at=checked_at, finished_at=checked_at, error=str(exc))
             self._store_update_metadata(config, checked_at=checked_at)
             return self.snapshot()
         latest_version = result.get("latest_version", config.update.latest_version)
@@ -222,11 +227,12 @@ class UpdateManager:
         with self._lock:
             if self._snapshot.status == "installing" or not self._snapshot.update_available or (self._snapshot.update_channel == "branch" and not self._snapshot.branch_compatible):
                 return False
+            self._reset_update_log("Starting update install...")
             self._snapshot = replace(
                 self._snapshot,
                 status="installing",
                 started_at=datetime.now(timezone.utc),
-                output=["Starting update install..."],
+                output=self._read_update_log() or ["Starting update install..."],
             )
         thread = threading.Thread(target=self._install, name="updater", daemon=True)
         thread.start()
@@ -238,11 +244,35 @@ class UpdateManager:
             target = snapshot.latest_version if snapshot.update_channel == "release" else snapshot.selected_branch
             install_update(self.repo_path, self._append, channel=snapshot.update_channel, target=target)
         except Exception as exc:
+            LOGGER.exception("update installation failed")
+            self._append(f"Update failed: {exc}")
             self._set(status="failed", error=str(exc), finished_at=datetime.now(timezone.utc))
             return
         self._set(status="installed", update_available=False, finished_at=datetime.now(timezone.utc))
         self._append("Update installed. Restarting service if systemd is available...")
         threading.Thread(target=restart_service_later, daemon=True).start()
+
+    def _read_update_log(self) -> list[str]:
+        if not self.update_log_path:
+            return []
+        try:
+            return self.update_log_path.read_text(encoding="utf-8").splitlines()[-200:]
+        except OSError:
+            return []
+
+    def _write_update_log(self, lines: list[str], mode: str = "a") -> None:
+        if not self.update_log_path:
+            return
+        try:
+            self.update_log_path.parent.mkdir(parents=True, exist_ok=True)
+            with self.update_log_path.open(mode, encoding="utf-8") as handle:
+                for line in lines:
+                    handle.write(f"{datetime.now(timezone.utc).isoformat()} {line}\n")
+        except OSError as exc:
+            LOGGER.warning("failed to write updater log %s: %s", self.update_log_path, exc)
+
+    def _reset_update_log(self, line: str) -> None:
+        self._write_update_log([line], mode="w")
 
     def _load_config(self) -> AppConfig:
         if self.config_path:
@@ -295,6 +325,7 @@ class UpdateManager:
             LOGGER.info("failed to store update metadata: %s", exc)
 
     def _append(self, line: str) -> None:
+        self._write_update_log([line])
         with self._lock:
             output = [*self._snapshot.output, line][-400:]
             self._snapshot = replace(self._snapshot, output=output)
@@ -486,7 +517,10 @@ def install_update(repo_path: Path, log: Any, channel: str = "branch", target: s
     else:
         raise RuntimeError(f"Unsupported update channel: {channel}")
     log("Installing package with current Python...")
-    run_command([sys.executable, "-m", "pip", "install", "-e", str(repo_path)], repo_path)
+    run_command(
+        [sys.executable, "-m", "pip", "install", "--no-deps", "--force-reinstall", str(repo_path)],
+        repo_path,
+    )
 
 
 def ensure_git_repo(repo_path: Path) -> None:
@@ -544,7 +578,8 @@ def run_command(command: list[str], repo_path: Path, check: bool = True) -> subp
     result = subprocess.run(command, cwd=repo_path, capture_output=True, text=True, timeout=300)
     if check and result.returncode != 0:
         message = result.stderr.strip() or result.stdout.strip() or f"command failed: {' '.join(command)}"
-        raise RuntimeError(message)
+        display_command = " ".join(command)
+        raise RuntimeError(f"Command failed with exit code {result.returncode}: {display_command}\n{message}")
     return result
 
 
