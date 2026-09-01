@@ -8,6 +8,7 @@ This project follows the spirit of Keep a Changelog. Update this file for every 
 
 ### Added
 
+- Added direct Discord webhook entry, separate Discord/email test buttons, and example tooltips for Proxmox, HA, and notification settings; protected saved configuration with owner-only permissions and bumped the feature version to `0.2.7`.
 - Backported persistent update diagnostics and installed-package repository discovery to the Proxmox feature branch and aligned its displayed version with `0.2.6`.
 - Guarded Proxmox shutdown automation with persisted outage state, UPS thresholds, dry-run support, per-node API tokens, HA freeze and manual/automatic-safe rearming, quorum/storage/Ceph checks, Discord and SMTP alerts, Web UI controls, and audit history.
 - Bumped the application version to `0.2.0` for the power-actions feature set.

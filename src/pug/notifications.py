@@ -40,7 +40,7 @@ class NotificationManager:
 
     def _discord(self, config: NotificationConfig, event: str, severity: str, message: str, details: dict[str, Any]) -> NotificationResult:
         try:
-            webhook = _read_secret(config.discord_webhook_url_file)
+            webhook = config.discord_webhook_url.strip() or _read_secret(config.discord_webhook_url_file)
             fields = [{"name": str(key).replace("_", " ").title(), "value": str(value)[:1024], "inline": True} for key, value in details.items()]
             payload = {
                 "username": "PowerPi UPS Gateway",

@@ -107,6 +107,7 @@ class UpdateConfig:
 @dataclass(frozen=True)
 class NotificationConfig:
     discord_enabled: bool = False
+    discord_webhook_url: str = ""
     discord_webhook_url_file: str = "/etc/pug/secrets/discord-webhook"
     email_enabled: bool = False
     smtp_host: str = ""
@@ -276,6 +277,7 @@ def config_from_mapping(data: dict[str, Any]) -> AppConfig:
         ),
         notifications=NotificationConfig(
             discord_enabled=bool(notifications.get("discord_enabled", False)),
+            discord_webhook_url=str(notifications.get("discord_webhook_url", "")),
             discord_webhook_url_file=str(notifications.get("discord_webhook_url_file", "/etc/pug/secrets/discord-webhook")),
             email_enabled=bool(notifications.get("email_enabled", False)),
             smtp_host=str(notifications.get("smtp_host", "")),
@@ -324,7 +326,9 @@ def config_from_mapping(data: dict[str, Any]) -> AppConfig:
 
 def save_config(config: AppConfig, path: str | Path) -> None:
     validate_config(config)
-    Path(path).write_text(render_config(config), encoding="utf-8")
+    config_path = Path(path)
+    config_path.write_text(render_config(config), encoding="utf-8")
+    config_path.chmod(0o600)
 
 
 def render_config(config: AppConfig) -> str:
@@ -404,8 +408,10 @@ def validate_config(config: AppConfig) -> None:
         raise ConfigError("notifications.minimum_severity must be info, warning, or critical")
     if config.notifications.timeout_seconds <= 0:
         raise ConfigError("notifications.timeout_seconds must be greater than zero")
-    if config.notifications.discord_enabled and not config.notifications.discord_webhook_url_file:
-        raise ConfigError("notifications.discord_webhook_url_file is required when Discord is enabled")
+    if config.notifications.discord_enabled and not (config.notifications.discord_webhook_url or config.notifications.discord_webhook_url_file):
+        raise ConfigError("Discord notifications require a webhook URL or webhook secret file")
+    if config.notifications.discord_webhook_url and not config.notifications.discord_webhook_url.startswith("https://"):
+        raise ConfigError("notifications.discord_webhook_url must use https://")
     if config.power_actions.threshold_mode not in {"any", "all"}:
         raise ConfigError("power_actions.threshold_mode must be any or all")
     if config.power_actions.ha_disarm_mode not in {"freeze", "ignore"}:

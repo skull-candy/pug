@@ -32,7 +32,7 @@ def test_update_snapshot_serializes_for_web_ui() -> None:
 
     assert payload["status"] == "available"
     assert payload["update_available"] is True
-    assert payload["installed_version"] == "0.2.6"
+    assert payload["installed_version"] == "0.2.7"
     assert payload["latest_version"] == "v1.0.0"
     assert payload["latest_release_url"] == "https://git.vns.ae/ahsan/pug/-/releases/v1.0.0"
     assert payload["checked_at"] == "2026-07-04T12:00:00+00:00"

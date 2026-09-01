@@ -64,6 +64,7 @@ update:
 
 notifications:
   discord_enabled: false
+  discord_webhook_url: ""
   discord_webhook_url_file: "/etc/pug/secrets/discord-webhook"
   email_enabled: false
   smtp_host: ""

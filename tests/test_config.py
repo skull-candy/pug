@@ -1,6 +1,6 @@
 import pytest
 
-from pug.config import AppConfig, BackendConfig, ConfigError, HttpConfig, SnmpConfig, load_config, validate_config
+from pug.config import AppConfig, BackendConfig, ConfigError, HttpConfig, NotificationConfig, SnmpConfig, load_config, save_config, validate_config
 
 
 def test_load_config_reads_project_example() -> None:
@@ -100,3 +100,20 @@ def test_config_list_preserves_commas_inside_quoted_profile(tmp_path) -> None:
     path.write_text('update:\n  branch_profiles: ["PVE|feature/pve|Shutdown, HA, and alerts"]\n', encoding="utf-8")
 
     assert load_config(path).update.branch_profiles == ["PVE|feature/pve|Shutdown, HA, and alerts"]
+
+
+def test_direct_discord_webhook_round_trips_in_owner_only_config(tmp_path) -> None:
+    path = tmp_path / "config.yaml"
+    config = AppConfig(notifications=NotificationConfig(discord_enabled=True, discord_webhook_url="https://discord.com/api/webhooks/123/token"))
+
+    save_config(config, path)
+
+    assert load_config(path).notifications.discord_webhook_url == "https://discord.com/api/webhooks/123/token"
+    assert path.stat().st_mode & 0o777 == 0o600
+
+
+def test_direct_discord_webhook_requires_https() -> None:
+    config = AppConfig(notifications=NotificationConfig(discord_webhook_url="http://discord.example/webhook"))
+
+    with pytest.raises(ConfigError, match="https"):
+        validate_config(config)

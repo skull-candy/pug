@@ -1,9 +1,10 @@
 from pug.collector.simulator import simulator_state
-from pug.config import AppConfig, HttpConfig, LoggingConfig, load_config, save_config
+from pug.config import AppConfig, HttpConfig, LoggingConfig, NotificationConfig, load_config, save_config
 from pug.diagnostics import DiagnosticSnapshot
 from pug.frontends.homeassistant import discovery_payloads
 from pug.frontends.http import (
     config_from_form,
+    config_to_public_dict,
     control_apcupsd_service,
     client_requires_http_auth,
     display_label,
@@ -132,7 +133,7 @@ def test_dashboard_has_modern_sections_and_no_settings_form() -> None:
     assert '<meta http-equiv="refresh" content="30">' not in page
     assert "Administration" in page
     assert "Developed By: Ahsan Muhammad" in page
-    assert "Version 0.2.6" in page
+    assert "Version 0.2.7" in page
     assert 'id="update-banner-text"' in page
     assert "Line / AVR path active" in page
     assert "Line / AVR" in page
@@ -216,7 +217,22 @@ def test_proxmox_settings_page_contains_dedicated_configuration() -> None:
     assert "Fully automatic (safe)" in page
     assert 'action="/proxmox-config"' in page
     assert "Save Proxmox Configuration" in page
+    assert 'name="notifications_discord_webhook_url"' in page
+    assert 'type="password"' in page
+    assert "Test Discord" in page
+    assert "Test Email" in page
+    assert "/api/notifications/test/" in page
+    assert "Example: 180 seconds" in page
     assert 'class="active" href="/proxmox-settings"' in page
+
+
+def test_public_config_masks_direct_discord_webhook() -> None:
+    config = AppConfig(notifications=NotificationConfig(discord_webhook_url="https://discord.com/api/webhooks/123/secret"))
+
+    notifications = config_to_public_dict(config)["notifications"]
+
+    assert notifications["discord_webhook_url"] == ""
+    assert notifications["discord_webhook_configured"] is True
 
 
 def test_power_actions_page_contains_guarded_controls() -> None:

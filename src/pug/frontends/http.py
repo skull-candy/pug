@@ -40,6 +40,7 @@ from pug.diagnostics import DiagnosticManager, DiagnosticSnapshot, diagnostic_la
 from pug.frontends.homeassistant import discovery_payloads
 from pug.frontends.mqtt import publish_homeassistant_rediscovery
 from pug.frontends.prometheus import render_metrics
+from pug.notifications import NotificationManager
 from pug.raw_stats import state_payload
 from pug.power_actions import PowerActionManager
 from pug.state import StateStore
@@ -287,6 +288,22 @@ class HttpFrontend:
                     else:
                         self._send_json({"error": "not found"}, status=404)
                     return
+                if self.path.startswith("/api/notifications/test/"):
+                    provider = self.path.rsplit("/", 1)[-1]
+                    if provider not in {"discord", "email"}:
+                        self._send_json({"ok": False, "message": "Unknown notification provider."}, status=404)
+                        return
+                    notification_config = frontend.current_config().notifications
+                    notification_config = replace(
+                        notification_config,
+                        discord_enabled=provider == "discord",
+                        email_enabled=provider == "email",
+                        minimum_severity="info",
+                    )
+                    results = NotificationManager().send(notification_config, "test_notification", "info", f"PowerPi UPS Gateway {provider.title()} test.")
+                    result = asdict(results[0]) if results else {"provider": provider, "ok": False, "message": "No notification was sent."}
+                    self._send_json(result, status=200 if result["ok"] else 502)
+                    return
                 if self.path == "/proxmox-config":
                     length = int(self.headers.get("Content-Length", "0"))
                     form = parse_qs(self.rfile.read(length).decode("utf-8"), keep_blank_values=True)
@@ -504,6 +521,7 @@ def config_from_form(form: dict[str, list[str]], current_config: AppConfig | Non
         ),
         notifications=NotificationConfig(
             discord_enabled=_checked(form, "notifications_discord_enabled"),
+            discord_webhook_url=(current_config.notifications.discord_webhook_url if current_config else ""),
             discord_webhook_url_file=_field(form, "notifications_discord_webhook_url_file"),
             email_enabled=_checked(form, "notifications_email_enabled"),
             smtp_host=_field(form, "notifications_smtp_host"),
@@ -553,8 +571,11 @@ def config_from_form(form: dict[str, list[str]], current_config: AppConfig | Non
 
 
 def proxmox_config_from_form(form: dict[str, list[str]], current_config: AppConfig) -> AppConfig:
+    submitted_webhook = _field(form, "notifications_discord_webhook_url").strip()
+    saved_webhook = "" if _checked(form, "notifications_discord_webhook_clear") else submitted_webhook or current_config.notifications.discord_webhook_url
     notifications = NotificationConfig(
         discord_enabled=_checked(form, "notifications_discord_enabled"),
+        discord_webhook_url=saved_webhook,
         discord_webhook_url_file=_field(form, "notifications_discord_webhook_url_file"),
         email_enabled=_checked(form, "notifications_email_enabled"),
         smtp_host=_field(form, "notifications_smtp_host"),
@@ -669,7 +690,13 @@ def config_to_public_dict(config: AppConfig) -> dict[str, Any]:
             "branch_profiles": config.update.branch_profiles,
             "latest_branch_commit": config.update.latest_branch_commit,
         },
-        "notifications": {**asdict(config.notifications), "smtp_password_file": config.notifications.smtp_password_file, "discord_webhook_url_file": config.notifications.discord_webhook_url_file},
+        "notifications": {
+            **asdict(config.notifications),
+            "discord_webhook_url": "",
+            "discord_webhook_configured": bool(config.notifications.discord_webhook_url or config.notifications.discord_webhook_url_file),
+            "smtp_password_file": config.notifications.smtp_password_file,
+            "discord_webhook_url_file": config.notifications.discord_webhook_url_file,
+        },
         "power_actions": asdict(config.power_actions),
     }
 
@@ -2140,55 +2167,60 @@ def _render_full_config_form(config: AppConfig) -> str:
 
   <fieldset>
     <legend>Discord and Email Alerts</legend>
-    <label class="check"><input name="notifications_discord_enabled" type="checkbox"{_checked_attr(config.notifications.discord_enabled)}> Enable Discord webhook</label>
-    <label>Discord webhook secret file <input name="notifications_discord_webhook_url_file" value="{_escape(config.notifications.discord_webhook_url_file)}"></label>
-    <label class="check"><input name="notifications_email_enabled" type="checkbox"{_checked_attr(config.notifications.email_enabled)}> Enable email</label>
+    <p class="hint">Hover over a setting for an explanation and example. Save changes before sending a test.</p>
+    <label class="check" title="Send alert events to Discord. Example: enable after entering and saving a webhook URL."><input name="notifications_discord_enabled" type="checkbox"{_checked_attr(config.notifications.discord_enabled)}> Enable Discord webhook</label>
+    <label title="Paste the complete Discord webhook URL. It is stored in the protected config and is never displayed again. Example: https://discord.com/api/webhooks/123/token">Discord webhook URL <input name="notifications_discord_webhook_url" type="password" value="" autocomplete="new-password" placeholder="{'Configured — enter a new URL to replace it' if config.notifications.discord_webhook_url else 'https://discord.com/api/webhooks/...'}"></label>
+    <label class="check" title="Remove the webhook URL stored in config on Save. The secret-file fallback remains available."><input name="notifications_discord_webhook_clear" type="checkbox"> Clear saved Discord webhook URL</label>
+    <label title="Optional root-readable file containing a webhook URL. Used when no direct URL is saved. Example: /etc/pug/secrets/discord-webhook">Discord webhook secret file <input name="notifications_discord_webhook_url_file" value="{_escape(config.notifications.discord_webhook_url_file)}"></label>
+    <div class="actions"><button id="test-discord" class="button secondary" type="button">Test Discord</button></div>
+    <label class="check" title="Send alert events using the SMTP settings below. Example: enable after configuring smtp.example.com and recipients."><input name="notifications_email_enabled" type="checkbox"{_checked_attr(config.notifications.email_enabled)}> Enable email</label>
     <div class="grid">
-      <label>SMTP host <input name="notifications_smtp_host" value="{_escape(config.notifications.smtp_host)}"></label>
-      <label>SMTP port <input name="notifications_smtp_port" type="number" value="{config.notifications.smtp_port}"></label>
-      <label>SMTP security <select name="notifications_smtp_security"><option value="starttls"{_selected(config.notifications.smtp_security, 'starttls')}>STARTTLS</option><option value="tls"{_selected(config.notifications.smtp_security, 'tls')}>Implicit TLS</option><option value="none"{_selected(config.notifications.smtp_security, 'none')}>None</option></select></label>
-      <label>SMTP username <input name="notifications_smtp_username" value="{_escape(config.notifications.smtp_username)}"></label>
-      <label>SMTP password secret file <input name="notifications_smtp_password_file" value="{_escape(config.notifications.smtp_password_file)}"></label>
-      <label>From address <input name="notifications_email_from" value="{_escape(config.notifications.email_from)}"></label>
-      <label>Recipients <input name="notifications_email_recipients" value="{_escape(', '.join(config.notifications.email_recipients))}"></label>
-      <label>Minimum severity <select name="notifications_minimum_severity"><option value="info"{_selected(config.notifications.minimum_severity, 'info')}>Info</option><option value="warning"{_selected(config.notifications.minimum_severity, 'warning')}>Warning</option><option value="critical"{_selected(config.notifications.minimum_severity, 'critical')}>Critical</option></select></label>
-      <label>Timeout seconds <input name="notifications_timeout_seconds" type="number" min="1" value="{config.notifications.timeout_seconds}"></label>
+      <label title="SMTP server hostname. Example: smtp.gmail.com">SMTP host <input name="notifications_smtp_host" value="{_escape(config.notifications.smtp_host)}"></label>
+      <label title="SMTP server port. Example: 587 for STARTTLS or 465 for implicit TLS.">SMTP port <input name="notifications_smtp_port" type="number" value="{config.notifications.smtp_port}"></label>
+      <label title="Encryption required by the mail provider. Example: STARTTLS with port 587.">SMTP security <select name="notifications_smtp_security"><option value="starttls"{_selected(config.notifications.smtp_security, 'starttls')}>STARTTLS</option><option value="tls"{_selected(config.notifications.smtp_security, 'tls')}>Implicit TLS</option><option value="none"{_selected(config.notifications.smtp_security, 'none')}>None</option></select></label>
+      <label title="SMTP login name. Example: alerts@example.com">SMTP username <input name="notifications_smtp_username" value="{_escape(config.notifications.smtp_username)}"></label>
+      <label title="Root-readable file containing only the SMTP password. Example: /etc/pug/secrets/smtp-password">SMTP password secret file <input name="notifications_smtp_password_file" value="{_escape(config.notifications.smtp_password_file)}"></label>
+      <label title="Sender address used in the message From header. Example: pug@example.com">From address <input name="notifications_email_from" value="{_escape(config.notifications.email_from)}"></label>
+      <label title="Comma-separated destination addresses. Example: admin@example.com, noc@example.com">Recipients <input name="notifications_email_recipients" value="{_escape(', '.join(config.notifications.email_recipients))}"></label>
+      <label title="Lowest event severity sent. Example: Warning sends warning and critical alerts.">Minimum severity <select name="notifications_minimum_severity"><option value="info"{_selected(config.notifications.minimum_severity, 'info')}>Info</option><option value="warning"{_selected(config.notifications.minimum_severity, 'warning')}>Warning</option><option value="critical"{_selected(config.notifications.minimum_severity, 'critical')}>Critical</option></select></label>
+      <label title="Network timeout for Discord and SMTP. Example: 10 seconds.">Timeout seconds <input name="notifications_timeout_seconds" type="number" min="1" value="{config.notifications.timeout_seconds}"></label>
     </div>
+    <div class="actions"><button id="test-email" class="button secondary" type="button">Test Email</button><span id="notification-test-result" class="hint" role="status"></span></div>
   </fieldset>
 
   <fieldset>
     <legend>Proxmox Power Actions</legend>
     <p class="hint">Start in dry-run mode. Server format: name|host|node|token_id|token_secret_file|order. Higher order shuts down first.</p>
-    <label class="check"><input name="power_actions_enabled" type="checkbox"{_checked_attr(config.power_actions.enabled)}> Enable power actions</label>
-    <label class="check"><input name="power_actions_armed" type="checkbox"{_checked_attr(config.power_actions.armed)}> Arm automatic shutdown</label>
-    <label class="check"><input name="power_actions_dry_run" type="checkbox"{_checked_attr(config.power_actions.dry_run)}> Dry run (no Proxmox mutations)</label>
-    <label>Proxmox servers<textarea name="power_actions_proxmox_servers" rows="5">{_escape(chr(10).join(config.power_actions.proxmox_servers))}</textarea></label>
+    <label class="check" title="Enables the monitoring workflow. It still cannot shut down nodes unless Armed is also checked."><input name="power_actions_enabled" type="checkbox"{_checked_attr(config.power_actions.enabled)}> Enable power actions</label>
+    <label class="check" title="Allows automatic shutdown after criteria are met. Example: keep unchecked while commissioning."><input name="power_actions_armed" type="checkbox"{_checked_attr(config.power_actions.armed)}> Arm automatic shutdown</label>
+    <label class="check" title="Runs the complete decision flow without changing Proxmox. Example: enable for the first outage simulation."><input name="power_actions_dry_run" type="checkbox"{_checked_attr(config.power_actions.dry_run)}> Dry run (no Proxmox mutations)</label>
+    <label title="One node per line: name|host|node|token_id|token_secret_file|order. Example: pve1|192.168.1.11|pve1|pug@pve!ups|/etc/pug/secrets/pve1-token|10">Proxmox servers<textarea name="power_actions_proxmox_servers" rows="5">{_escape(chr(10).join(config.power_actions.proxmox_servers))}</textarea></label>
     <div class="grid">
-      <label>Minimum on-battery seconds <input name="power_actions_minimum_on_battery_seconds" type="number" min="1" value="{config.power_actions.minimum_on_battery_seconds}"></label>
-      <label>Battery threshold % <input name="power_actions_battery_charge_percent" type="number" min="0" max="100" value="{config.power_actions.battery_charge_percent}"></label>
-      <label>Runtime threshold minutes <input name="power_actions_runtime_minutes" type="number" min="0" value="{config.power_actions.runtime_minutes}"></label>
-      <label>Threshold mode <select name="power_actions_threshold_mode"><option value="any"{_selected(config.power_actions.threshold_mode, 'any')}>Any threshold</option><option value="all"{_selected(config.power_actions.threshold_mode, 'all')}>All thresholds</option></select></label>
-      <label>Consecutive samples <input name="power_actions_consecutive_samples" type="number" min="1" value="{config.power_actions.consecutive_samples}"></label>
-      <label>Maximum UPS state age seconds <input name="power_actions_maximum_state_age_seconds" type="number" min="1" value="{config.power_actions.maximum_state_age_seconds}"></label>
-      <label>Stable power before recovery seconds <input name="power_actions_rearm_after_online_seconds" type="number" min="1" value="{config.power_actions.rearm_after_online_seconds}"></label>
-      <label>HA recovery <select name="power_actions_ha_recovery_mode"><option value="manual"{_selected(config.power_actions.ha_recovery_mode, 'manual')}>Manual</option><option value="automatic_safe"{_selected(config.power_actions.ha_recovery_mode, 'automatic_safe')}>Fully automatic (safe)</option><option value="leave_disarmed"{_selected(config.power_actions.ha_recovery_mode, 'leave_disarmed')}>Leave disarmed</option></select></label>
-      <label>HA disarm mode <select name="power_actions_ha_disarm_mode"><option value="freeze"{_selected(config.power_actions.ha_disarm_mode, 'freeze')}>Freeze</option><option value="ignore"{_selected(config.power_actions.ha_disarm_mode, 'ignore')}>Ignore</option></select></label>
-      <label>HA health stable seconds <input name="power_actions_ha_health_stable_seconds" type="number" min="1" value="{config.power_actions.ha_health_stable_seconds}"></label>
-      <label>API timeout seconds <input name="power_actions_request_timeout_seconds" type="number" min="1" value="{config.power_actions.request_timeout_seconds}"></label>
-      <label>Delay between nodes seconds <input name="power_actions_delay_between_nodes_seconds" type="number" min="0" value="{config.power_actions.delay_between_nodes_seconds}"></label>
-      <label>CA certificate path <input name="power_actions_ca_certificate_path" value="{_escape(config.power_actions.ca_certificate_path)}"></label>
-      <label>State file path <input name="power_actions_state_file_path" value="{_escape(config.power_actions.state_file_path)}"></label>
+      <label title="How long utility power must be absent before thresholds count. Example: 180 seconds.">Minimum on-battery seconds <input name="power_actions_minimum_on_battery_seconds" type="number" min="1" value="{config.power_actions.minimum_on_battery_seconds}"></label>
+      <label title="Trigger when charge reaches this percentage. Example: 30%.">Battery threshold % <input name="power_actions_battery_charge_percent" type="number" min="0" max="100" value="{config.power_actions.battery_charge_percent}"></label>
+      <label title="Trigger when estimated runtime reaches this value. Example: 10 minutes.">Runtime threshold minutes <input name="power_actions_runtime_minutes" type="number" min="0" value="{config.power_actions.runtime_minutes}"></label>
+      <label title="Any triggers when either charge or runtime is low; All requires both. Example: Any is more conservative.">Threshold mode <select name="power_actions_threshold_mode"><option value="any"{_selected(config.power_actions.threshold_mode, 'any')}>Any threshold</option><option value="all"{_selected(config.power_actions.threshold_mode, 'all')}>All thresholds</option></select></label>
+      <label title="Required consecutive qualifying UPS polls. Example: 3 avoids a one-sample spike.">Consecutive samples <input name="power_actions_consecutive_samples" type="number" min="1" value="{config.power_actions.consecutive_samples}"></label>
+      <label title="Reject UPS readings older than this. Example: 15 seconds.">Maximum UPS state age seconds <input name="power_actions_maximum_state_age_seconds" type="number" min="1" value="{config.power_actions.maximum_state_age_seconds}"></label>
+      <label title="Utility power must remain online this long before HA recovery begins. Example: 600 seconds.">Stable power before recovery seconds <input name="power_actions_rearm_after_online_seconds" type="number" min="1" value="{config.power_actions.rearm_after_online_seconds}"></label>
+      <label title="Manual waits for an operator; Fully automatic rearms after health gates; Leave disarmed never rearms. Example: use Manual while commissioning.">HA recovery <select name="power_actions_ha_recovery_mode"><option value="manual"{_selected(config.power_actions.ha_recovery_mode, 'manual')}>Manual</option><option value="automatic_safe"{_selected(config.power_actions.ha_recovery_mode, 'automatic_safe')}>Fully automatic (safe)</option><option value="leave_disarmed"{_selected(config.power_actions.ha_recovery_mode, 'leave_disarmed')}>Leave disarmed</option></select></label>
+      <label title="Freeze prevents HA-managed guests from being recovered or restarted during shutdown. Ignore leaves HA unchanged.">HA disarm mode <select name="power_actions_ha_disarm_mode"><option value="freeze"{_selected(config.power_actions.ha_disarm_mode, 'freeze')}>Freeze</option><option value="ignore"{_selected(config.power_actions.ha_disarm_mode, 'ignore')}>Ignore</option></select></label>
+      <label title="All HA health gates must remain healthy for this period. Example: 120 seconds.">HA health stable seconds <input name="power_actions_ha_health_stable_seconds" type="number" min="1" value="{config.power_actions.ha_health_stable_seconds}"></label>
+      <label title="Timeout for each Proxmox API request. Example: 10 seconds.">API timeout seconds <input name="power_actions_request_timeout_seconds" type="number" min="1" value="{config.power_actions.request_timeout_seconds}"></label>
+      <label title="Pause after requesting each node shutdown. Example: 15 seconds.">Delay between nodes seconds <input name="power_actions_delay_between_nodes_seconds" type="number" min="0" value="{config.power_actions.delay_between_nodes_seconds}"></label>
+      <label title="Cluster CA used for TLS verification. Example: /etc/pug/proxmox-ca.pem.">CA certificate path <input name="power_actions_ca_certificate_path" value="{_escape(config.power_actions.ca_certificate_path)}"></label>
+      <label title="Persistent outage and HA ownership state. Example: /var/lib/pug/power-actions.json.">State file path <input name="power_actions_state_file_path" value="{_escape(config.power_actions.state_file_path)}"></label>
     </div>
-    <label class="check"><input name="power_actions_verify_tls" type="checkbox"{_checked_attr(config.power_actions.verify_tls)}> Verify Proxmox TLS certificates</label>
-    <label class="check"><input name="power_actions_ha_disarm_before_shutdown" type="checkbox"{_checked_attr(config.power_actions.ha_disarm_before_shutdown)}> Disarm HA before shutdown</label>
-    <label class="check"><input name="power_actions_ha_require_all_nodes" type="checkbox"{_checked_attr(config.power_actions.ha_require_all_nodes)}> Require all nodes before rearming</label>
-    <label class="check"><input name="power_actions_ha_require_quorum" type="checkbox"{_checked_attr(config.power_actions.ha_require_quorum)}> Require quorum</label>
-    <label class="check"><input name="power_actions_ha_require_storage_healthy" type="checkbox"{_checked_attr(config.power_actions.ha_require_storage_healthy)}> Require healthy storage</label>
-    <label class="check"><input name="power_actions_ha_require_ceph_healthy" type="checkbox"{_checked_attr(config.power_actions.ha_require_ceph_healthy)}> Require healthy Ceph when present</label>
-    <label class="check"><input name="power_actions_rearm_only_if_pug_disarmed_ha" type="checkbox"{_checked_attr(config.power_actions.rearm_only_if_pug_disarmed_ha)}> Rearm only if PUG disarmed HA</label>
-    <label class="check"><input name="power_actions_emergency_enabled" type="checkbox"{_checked_attr(config.power_actions.emergency_enabled)}> Enable emergency threshold</label>
-    <div class="grid"><label>Emergency battery % <input name="power_actions_emergency_battery_charge_percent" type="number" min="0" max="100" value="{config.power_actions.emergency_battery_charge_percent}"></label><label>Emergency runtime minutes <input name="power_actions_emergency_runtime_minutes" type="number" min="0" value="{config.power_actions.emergency_runtime_minutes}"></label></div>
-    <label class="check"><input name="power_actions_proceed_if_ha_preflight_failed" type="checkbox"{_checked_attr(config.power_actions.proceed_if_ha_preflight_failed)}> Emergency may proceed after HA preflight failure</label>
+    <label class="check" title="Reject invalid/self-signed certificates unless the configured CA trusts them. Recommended: enabled."><input name="power_actions_verify_tls" type="checkbox"{_checked_attr(config.power_actions.verify_tls)}> Verify Proxmox TLS certificates</label>
+    <label class="check" title="Freeze or otherwise disarm cluster HA before node shutdown. Example: enabled for HA-managed guests."><input name="power_actions_ha_disarm_before_shutdown" type="checkbox"{_checked_attr(config.power_actions.ha_disarm_before_shutdown)}> Disarm HA before shutdown</label>
+    <label class="check" title="Automatic HA recovery waits until every configured node is online."><input name="power_actions_ha_require_all_nodes" type="checkbox"{_checked_attr(config.power_actions.ha_require_all_nodes)}> Require all nodes before rearming</label>
+    <label class="check" title="Automatic HA recovery waits for cluster quorum."><input name="power_actions_ha_require_quorum" type="checkbox"{_checked_attr(config.power_actions.ha_require_quorum)}> Require quorum</label>
+    <label class="check" title="Automatic HA recovery waits until configured storage is available and healthy."><input name="power_actions_ha_require_storage_healthy" type="checkbox"{_checked_attr(config.power_actions.ha_require_storage_healthy)}> Require healthy storage</label>
+    <label class="check" title="When Ceph exists, automatic HA recovery waits for a healthy Ceph status."><input name="power_actions_ha_require_ceph_healthy" type="checkbox"{_checked_attr(config.power_actions.ha_require_ceph_healthy)}> Require healthy Ceph when present</label>
+    <label class="check" title="Prevents PUG from arming HA that an administrator had already disarmed before the outage."><input name="power_actions_rearm_only_if_pug_disarmed_ha" type="checkbox"{_checked_attr(config.power_actions.rearm_only_if_pug_disarmed_ha)}> Rearm only if PUG disarmed HA</label>
+    <label class="check" title="Allows a lower critical threshold to accelerate shutdown. Example: 10% charge or 3 minutes runtime."><input name="power_actions_emergency_enabled" type="checkbox"{_checked_attr(config.power_actions.emergency_enabled)}> Enable emergency threshold</label>
+    <div class="grid"><label title="Critical charge level for emergency behavior. Example: 10%.">Emergency battery % <input name="power_actions_emergency_battery_charge_percent" type="number" min="0" max="100" value="{config.power_actions.emergency_battery_charge_percent}"></label><label title="Critical estimated runtime for emergency behavior. Example: 3 minutes.">Emergency runtime minutes <input name="power_actions_emergency_runtime_minutes" type="number" min="0" value="{config.power_actions.emergency_runtime_minutes}"></label></div>
+    <label class="check" title="Permits emergency shutdown if HA preflight cannot complete. Example: enable only when preserving battery is safer than waiting."><input name="power_actions_proceed_if_ha_preflight_failed" type="checkbox"{_checked_attr(config.power_actions.proceed_if_ha_preflight_failed)}> Emergency may proceed after HA preflight failure</label>
   </fieldset>
 
   <button type="submit">Save Configuration</button>
@@ -2214,7 +2246,26 @@ def render_proxmox_settings_page(config: AppConfig) -> str:
     return page_shell(
         "Proxmox Settings",
         "proxmox-settings",
-        f'<section><h1>Proxmox Settings</h1><p class="muted">Configure Proxmox nodes, shutdown criteria, HA freeze and recovery, emergency behavior, Discord, and email alerts. Start with dry-run enabled.</p>{form}</section>',
+        f'''<section><h1>Proxmox Settings</h1><p class="muted">Configure Proxmox nodes, shutdown criteria, HA freeze and recovery, emergency behavior, Discord, and email alerts. Start with dry-run enabled.</p>{form}</section>
+        <script>
+        (() => {{
+          const result = document.getElementById("notification-test-result");
+          const test = async (provider) => {{
+            result.textContent = `Sending ${{provider}} test...`;
+            try {{
+              const response = await fetch(`/api/notifications/test/${{provider}}`, {{method:"POST"}});
+              const payload = await response.json();
+              result.textContent = payload.ok ? `${{provider[0].toUpperCase() + provider.slice(1)}} test delivered.` : `${{provider[0].toUpperCase() + provider.slice(1)}} test failed: ${{payload.message || "unknown error"}}`;
+              result.className = payload.ok ? "health ok" : "health warn";
+            }} catch (error) {{
+              result.textContent = `Notification test failed: ${{error.message}}`;
+              result.className = "health warn";
+            }}
+          }};
+          document.getElementById("test-discord").addEventListener("click", () => test("discord"));
+          document.getElementById("test-email").addEventListener("click", () => test("email"));
+        }})();
+        </script>''',
     )
 
 
