@@ -1536,7 +1536,7 @@ def render_updates_page(snapshot: UpdateSnapshot) -> str:
           </div>
           <div class="diagnostic-status">
             <dl class="detail-item"><dt>Installed Version</dt><dd id="update-installed">{_escape(snapshot.installed_version)}</dd></dl>
-            <dl class="detail-item"><dt>Latest Version</dt><dd id="update-latest">{_escape(snapshot.latest_version or "-")}</dd></dl>
+            <dl class="detail-item"><dt>Latest Release</dt><dd id="update-latest">{_escape(snapshot.latest_version or "-")}</dd></dl>
             <dl class="detail-item"><dt>Release Name</dt><dd id="update-release-name">{_escape(snapshot.latest_release_name or "-")}</dd></dl>
             <dl class="detail-item"><dt>Release Page</dt><dd>{release_link}</dd></dl>
             <dl class="detail-item"><dt>Check Interval</dt><dd id="update-interval">{_escape(update_interval_label(snapshot.check_interval))}</dd></dl>

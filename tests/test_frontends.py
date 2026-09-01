@@ -133,7 +133,7 @@ def test_dashboard_has_modern_sections_and_no_settings_form() -> None:
     assert '<meta http-equiv="refresh" content="30">' not in page
     assert "Administration" in page
     assert "Developed By: Ahsan Muhammad" in page
-    assert "Version 0.2.7" in page
+    assert "Version 0.2.8" in page
     assert 'id="update-banner-text"' in page
     assert "Line / AVR path active" in page
     assert "Line / AVR" in page
@@ -299,7 +299,7 @@ def test_updates_page_contains_check_and_install_actions() -> None:
 
     assert "Updates" in page
     assert "GitLab Releases" in page
-    assert "Latest Version" in page
+    assert "Latest Release" in page
     assert "v1.0.0" in page
     assert "Check for Update" in page
     assert "Download and Install" in page

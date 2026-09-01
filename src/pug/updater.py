@@ -158,7 +158,14 @@ class UpdateManager:
         self._set(status="checking", error="", output=self._read_update_log() or [f"Checking {label}..."])
         checked_at = datetime.now(timezone.utc)
         try:
-            result = check_for_update(config.update) if config.update.update_channel == "release" else check_branch_update(self.repo_path, config.update.selected_branch)
+            if config.update.update_channel == "release":
+                result = check_for_update(config.update)
+            else:
+                result = check_branch_update(self.repo_path, config.update.selected_branch)
+                try:
+                    result.update(check_for_update(config.update))
+                except Exception as exc:
+                    LOGGER.info("release metadata refresh failed during branch check: %s", exc)
         except Exception as exc:
             LOGGER.exception("update check failed")
             self._append(f"Update check failed: {exc}")
@@ -166,8 +173,8 @@ class UpdateManager:
             self._store_update_metadata(config, checked_at=checked_at)
             return self.snapshot()
         latest_version = result.get("latest_version", config.update.latest_version)
-        release_url = result.get("latest_release_url", "")
-        release_name = result.get("latest_release_name", "")
+        release_url = result.get("latest_release_url", config.update.latest_release_url)
+        release_name = result.get("latest_release_name", config.update.latest_release_name)
         current_commit = result.get("current_commit", safe_git_commit(self.repo_path, "HEAD"))
         target_commit = result.get("target_commit", "")
         current = safe_current_branch(self.repo_path)

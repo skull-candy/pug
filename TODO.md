@@ -10,6 +10,7 @@ This file tracks known follow-up work. Update it with every codebase change, eve
 
 ## Done
 
+- Kept Latest Release metadata accurate while tracking feature branches.
 - Added secure direct Discord webhook entry, per-provider alert tests, and explanatory examples across Proxmox settings.
 - Backported Web updater installation, logging, and repository-discovery fixes to the Proxmox feature set.
 - Moved PVE shutdown/HA/notification configuration from general Settings to a dedicated Proxmox Settings page and clarified feature-branch selection.

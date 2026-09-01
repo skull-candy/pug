@@ -32,7 +32,7 @@ def test_update_snapshot_serializes_for_web_ui() -> None:
 
     assert payload["status"] == "available"
     assert payload["update_available"] is True
-    assert payload["installed_version"] == "0.2.7"
+    assert payload["installed_version"] == "0.2.8"
     assert payload["latest_version"] == "v1.0.0"
     assert payload["latest_release_url"] == "https://git.vns.ae/ahsan/pug/-/releases/v1.0.0"
     assert payload["checked_at"] == "2026-07-04T12:00:00+00:00"
@@ -194,3 +194,40 @@ def test_update_check_failure_is_visible(monkeypatch) -> None:
 
     assert snapshot.status == "failed"
     assert snapshot.error == "network unavailable"
+
+
+def test_branch_check_refreshes_release_metadata(monkeypatch, tmp_path) -> None:
+    _origin, _seed, checkout = _repo_with_remote(tmp_path)
+    monkeypatch.setattr(
+        "pug.updater.check_for_update",
+        lambda _config: {
+            "latest_version": "v9.0.0",
+            "latest_release_url": "https://git.example/releases/v9.0.0",
+            "latest_release_name": "PUG v9.0.0",
+        },
+    )
+    config = AppConfig(update=UpdateConfig(update_channel="branch", selected_branch="main"))
+
+    snapshot = UpdateManager(config=config, repo_path=checkout).check()
+
+    assert snapshot.status == "current"
+    assert snapshot.latest_version == "v9.0.0"
+    assert snapshot.latest_release_name == "PUG v9.0.0"
+
+
+def test_branch_check_keeps_cached_release_metadata_when_release_api_fails(monkeypatch, tmp_path) -> None:
+    _origin, _seed, checkout = _repo_with_remote(tmp_path)
+    monkeypatch.setattr("pug.updater.check_for_update", lambda _config: (_ for _ in ()).throw(OSError("release API unavailable")))
+    update = UpdateConfig(
+        update_channel="branch",
+        selected_branch="main",
+        latest_version="v8.0.0",
+        latest_release_url="https://git.example/releases/v8.0.0",
+        latest_release_name="PUG v8.0.0",
+    )
+
+    snapshot = UpdateManager(config=AppConfig(update=update), repo_path=checkout).check()
+
+    assert snapshot.status == "current"
+    assert snapshot.latest_version == "v8.0.0"
+    assert snapshot.latest_release_name == "PUG v8.0.0"
