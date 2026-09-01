@@ -239,12 +239,14 @@ class HttpFrontend:
                     return
                 if self.path == "/api/updates/install":
                     started = frontend.updater.start_install()
+                    snapshot = frontend.updater.snapshot()
                     self._send_json(
                         {
                             "ok": started,
-                            "message": "Update install started." if started else "Update install already running.",
-                            "update": frontend.updater.snapshot().to_dict(),
-                        }
+                            "message": "Update install started." if started else snapshot.error or "No compatible update is ready to install. Run Check for Update first.",
+                            "update": snapshot.to_dict(),
+                        },
+                        status=202 if started else 409,
                     )
                     return
                 if self.path == "/homeassistant/rediscover":
@@ -1389,12 +1391,23 @@ def render_updates_page(snapshot: UpdateSnapshot) -> str:
             fields.install.disabled = installing || !payload.update_available || (payload.update_channel === "branch" && !payload.branch_compatible);
           }};
           const status = async () => {{
-            const response = await fetch("/api/updates", {{ cache: "no-store" }});
-            if (response.ok) update(await response.json());
+            try {{
+              const response = await fetch("/api/updates", {{ cache: "no-store" }});
+              if (!response.ok) throw new Error(`Status request failed (HTTP ${{response.status}})`);
+              update(await response.json());
+            }} catch (error) {{
+              fields.message.textContent = `Unable to read updater status: ${{error.message}}`;
+              fields.pill.textContent = "Connection error";
+              fields.pill.className = "health warn";
+            }}
           }};
           document.getElementById("check-updates").addEventListener("click", async () => {{
-            const response = await fetch("/api/updates/check", {{ method: "POST" }});
-            if (response.ok) update(await response.json());
+            try {{
+              const response = await fetch("/api/updates/check", {{ method: "POST" }});
+              const payload = await response.json();
+              if (!response.ok) throw new Error(payload.message || `HTTP ${{response.status}}`);
+              update(payload);
+            }} catch (error) {{ fields.message.textContent = `Update check failed: ${{error.message}}`; }}
           }});
           document.getElementById("update-branch-select").addEventListener("change", () => {{
             document.getElementById("update-channel-select").value = "branch";
@@ -1414,11 +1427,15 @@ def render_updates_page(snapshot: UpdateSnapshot) -> str:
             const branch = document.getElementById("update-branch-select").value;
             const target = channel === "release" ? "the exact latest release tag" : `origin/${{branch}}`;
             if (!confirm(`Download and install ${{target}}?\\n\\nThe Git checkout may switch revisions and the service will restart.`)) return;
-            const response = await fetch("/api/updates/install", {{ method: "POST" }});
-            if (response.ok) {{
+            try {{
+              const response = await fetch("/api/updates/install", {{ method: "POST" }});
               const payload = await response.json();
-              if (!payload.ok) alert(payload.message || "Update install could not start.");
+              if (!response.ok || !payload.ok) throw new Error(payload.message || `HTTP ${{response.status}}`);
+              update(payload.update);
               await status();
+            }} catch (error) {{
+              fields.message.textContent = `Update install failed: ${{error.message}}`;
+              alert(fields.message.textContent);
             }}
           }});
           setInterval(status, 3000);
