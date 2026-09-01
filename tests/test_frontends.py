@@ -132,7 +132,7 @@ def test_dashboard_has_modern_sections_and_no_settings_form() -> None:
     assert '<meta http-equiv="refresh" content="30">' not in page
     assert "Administration" in page
     assert "Developed By: Ahsan Muhammad" in page
-    assert "Version 0.2.3" in page
+    assert "Version 0.2.6" in page
     assert 'id="update-banner-text"' in page
     assert "Line / AVR path active" in page
     assert "Line / AVR" in page
