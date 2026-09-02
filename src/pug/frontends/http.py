@@ -43,6 +43,7 @@ from pug.frontends.prometheus import render_metrics
 from pug.notifications import NotificationManager
 from pug.raw_stats import state_payload
 from pug.power_actions import PowerActionManager
+from pug.proxmox import verify_proxmox_servers
 from pug.state import StateStore
 from pug.updater import SERVICE_NAME, UpdateManager, UpdateSnapshot, restart_service_later
 
@@ -303,6 +304,18 @@ class HttpFrontend:
                     results = NotificationManager().send(notification_config, "test_notification", "info", f"PowerPi UPS Gateway {provider.title()} test.")
                     result = asdict(results[0]) if results else {"provider": provider, "ok": False, "message": "No notification was sent."}
                     self._send_json(result, status=200 if result["ok"] else 502)
+                    return
+                if self.path == "/api/proxmox/test":
+                    try:
+                        results = verify_proxmox_servers(frontend.current_config().power_actions)
+                    except (OSError, ValueError) as exc:
+                        self._send_json({"ok": False, "message": str(exc), "results": []}, status=400)
+                        return
+                    ok = bool(results) and all(item["ok"] for item in results)
+                    message = "All Proxmox hosts verified." if ok else "One or more Proxmox hosts failed verification."
+                    if not results:
+                        message = "No Proxmox hosts are configured."
+                    self._send_json({"ok": ok, "message": message, "results": results}, status=200 if ok else 502)
                     return
                 if self.path == "/proxmox-config":
                     length = int(self.headers.get("Content-Length", "0"))
@@ -948,6 +961,10 @@ def page_shell(title: str, active: str, content: str, auto_refresh: bool = False
     .text-link {{ color:var(--blue); text-decoration:none; font-weight:700; }}
     .log-view {{ max-height: 68vh; overflow:auto; padding:14px; background:#0b1220; color:#d8e2f1; border-radius:8px; font: 13px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace; white-space:pre-wrap; }}
     .actions {{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; }}
+    .proxmox-host {{ border:1px solid var(--line); border-radius:8px; padding:12px; margin:10px 0; background:#fbfcfe; }}
+    .proxmox-host-head {{ display:flex; justify-content:space-between; align-items:center; gap:10px; }}
+    .proxmox-host-head strong {{ color:var(--ink); }}
+    .remove-proxmox-host {{ background:transparent; color:var(--bad); border:1px solid #fecaca; padding:6px 10px; }}
     .diagnostic-status {{ display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:8px; margin:12px 0; }}
     .switch-row {{ display:flex; align-items:center; justify-content:space-between; gap:12px; margin:14px 0 10px; }}
     .switch {{ position:relative; display:inline-flex; align-items:center; gap:10px; cursor:pointer; font-weight:700; }}
@@ -2042,6 +2059,33 @@ def resolve_timezone(timezone_name: str) -> tuple[timezone | ZoneInfo, str]:
         return timezone.utc, "UTC"
 
 
+def _proxmox_host_rows(servers: list[str]) -> str:
+    parsed: list[list[str]] = []
+    for server in servers:
+        parts = [part.strip() for part in str(server).split("|", 5)]
+        if len(parts) == 6:
+            parsed.append(parts)
+    parsed = parsed or [["", "", "", "", "", ""]]
+    labels = [
+        ("name", "Display name", "pve1"),
+        ("host", "Host or IP", "192.168.1.11"),
+        ("node", "Proxmox node", "pve1"),
+        ("token_id", "API token ID", "pug@pve!ups"),
+        ("token_secret_file", "Token secret file", "/etc/pug/secrets/pve1-token"),
+        ("order", "Shutdown order", "10"),
+    ]
+    rows = []
+    for index, values in enumerate(parsed, start=1):
+        inputs = ""
+        for (field, label, example), value in zip(labels, values):
+            number_attributes = ' type="number" step="1"' if field == "order" else ""
+            inputs += f'<label>{label}<input data-host-field="{field}" value="{_escape(value)}" placeholder="{_escape(example)}"{number_attributes}></label>'
+        rows.append(
+            f'<div class="proxmox-host"><div class="proxmox-host-head"><strong>Host {index}</strong><button class="remove-proxmox-host" type="button">Remove</button></div><div class="grid">{inputs}</div></div>'
+        )
+    return "".join(rows)
+
+
 def _render_full_config_form(config: AppConfig) -> str:
     return f"""<form method="post" action="/config">
   <fieldset>
@@ -2194,7 +2238,15 @@ def _render_full_config_form(config: AppConfig) -> str:
     <label class="check" title="Enables the monitoring workflow. It still cannot shut down nodes unless Armed is also checked."><input name="power_actions_enabled" type="checkbox"{_checked_attr(config.power_actions.enabled)}> Enable power actions</label>
     <label class="check" title="Allows automatic shutdown after criteria are met. Example: keep unchecked while commissioning."><input name="power_actions_armed" type="checkbox"{_checked_attr(config.power_actions.armed)}> Arm automatic shutdown</label>
     <label class="check" title="Runs the complete decision flow without changing Proxmox. Example: enable for the first outage simulation."><input name="power_actions_dry_run" type="checkbox"{_checked_attr(config.power_actions.dry_run)}> Dry run (no Proxmox mutations)</label>
-    <label title="One node per line: name|host|node|token_id|token_secret_file|order. Example: pve1|192.168.1.11|pve1|pug@pve!ups|/etc/pug/secrets/pve1-token|10">Proxmox servers<textarea name="power_actions_proxmox_servers" rows="5">{_escape(chr(10).join(config.power_actions.proxmox_servers))}</textarea></label>
+    <div title="Add one row for every Proxmox node. Higher shutdown order values are processed first.">
+      <strong>Proxmox hosts</strong>
+      <p class="hint">Enter each requirement separately. Example: pve1, 192.168.1.11, pve1, pug@pve!ups, /etc/pug/secrets/pve1-token, 10.</p>
+      <div id="proxmox-hosts">{_proxmox_host_rows(config.power_actions.proxmox_servers)}</div>
+      <button id="add-proxmox-host" class="button secondary" type="button">Add Proxmox Host</button>
+      <textarea id="power-actions-proxmox-servers" class="hidden" name="power_actions_proxmox_servers">{_escape(chr(10).join(config.power_actions.proxmox_servers))}</textarea>
+      <div class="actions"><button id="test-proxmox" class="button secondary" type="button">Test and Verify Proxmox Hosts</button><span id="proxmox-test-result" class="hint" role="status"></span></div>
+      <pre id="proxmox-test-details" class="log-view hidden"></pre>
+    </div>
     <div class="grid">
       <label title="How long utility power must be absent before thresholds count. Example: 180 seconds.">Minimum on-battery seconds <input name="power_actions_minimum_on_battery_seconds" type="number" min="1" value="{config.power_actions.minimum_on_battery_seconds}"></label>
       <label title="Trigger when charge reaches this percentage. Example: 30%.">Battery threshold % <input name="power_actions_battery_charge_percent" type="number" min="0" max="100" value="{config.power_actions.battery_charge_percent}"></label>
@@ -2249,6 +2301,68 @@ def render_proxmox_settings_page(config: AppConfig) -> str:
         f'''<section><h1>Proxmox Settings</h1><p class="muted">Configure Proxmox nodes, shutdown criteria, HA freeze and recovery, emergency behavior, Discord, and email alerts. Start with dry-run enabled.</p>{form}</section>
         <script>
         (() => {{
+          const hosts = document.getElementById("proxmox-hosts");
+          const hostFields = ["name", "host", "node", "token_id", "token_secret_file", "order"];
+          const hostLabels = ["Display name", "Host or IP", "Proxmox node", "API token ID", "Token secret file", "Shutdown order"];
+          const hostExamples = ["pve1", "192.168.1.11", "pve1", "pug@pve!ups", "/etc/pug/secrets/pve1-token", "10"];
+          const renumberHosts = () => hosts.querySelectorAll(".proxmox-host").forEach((row, index) => row.querySelector("strong").textContent = `Host ${{index + 1}}`);
+          const bindRemoveButtons = () => hosts.querySelectorAll(".remove-proxmox-host").forEach(button => {{
+            button.onclick = () => {{
+              button.closest(".proxmox-host").remove();
+              if (!hosts.children.length) addHost();
+              renumberHosts();
+            }};
+          }});
+          const addHost = () => {{
+            const row = document.createElement("div");
+            row.className = "proxmox-host";
+            const inputs = hostFields.map((field, index) => `<label>${{hostLabels[index]}}<input data-host-field="${{field}}" placeholder="${{hostExamples[index]}}" ${{field === "order" ? 'type="number" step="1"' : ""}}></label>`).join("");
+            row.innerHTML = `<div class="proxmox-host-head"><strong></strong><button class="remove-proxmox-host" type="button">Remove</button></div><div class="grid">${{inputs}}</div>`;
+            hosts.appendChild(row);
+            renumberHosts();
+            bindRemoveButtons();
+          }};
+          document.getElementById("add-proxmox-host").addEventListener("click", addHost);
+          bindRemoveButtons();
+          document.querySelector('form[action="/proxmox-config"]').addEventListener("submit", event => {{
+            const lines = [];
+            for (const row of hosts.querySelectorAll(".proxmox-host")) {{
+              const values = hostFields.map(field => row.querySelector(`[data-host-field="${{field}}"]`).value.trim());
+              if (values.every(value => !value)) continue;
+              if (values.some(value => !value)) {{
+                event.preventDefault();
+                alert(`${{row.querySelector("strong").textContent}} is incomplete. Fill every field or remove the row.`);
+                return;
+              }}
+              if (values.some(value => value.includes("|"))) {{
+                event.preventDefault();
+                alert("Proxmox host fields cannot contain the | character.");
+                return;
+              }}
+              lines.push(values.join("|"));
+            }}
+            document.getElementById("power-actions-proxmox-servers").value = lines.join("\n");
+          }});
+          document.getElementById("test-proxmox").addEventListener("click", async () => {{
+            const result = document.getElementById("proxmox-test-result");
+            const details = document.getElementById("proxmox-test-details");
+            result.textContent = "Testing saved Proxmox hosts...";
+            details.classList.add("hidden");
+            try {{
+              const response = await fetch("/api/proxmox/test", {{method:"POST"}});
+              const payload = await response.json();
+              result.textContent = payload.message;
+              result.className = payload.ok ? "health ok" : "health warn";
+              details.textContent = (payload.results || []).map(item => {{
+                if (!item.ok) return `${{item.name}} (${{item.host}}): FAILED — ${{item.message}}`;
+                return `${{item.name}} (${{item.host}}): VERIFIED\n  Node: ${{item.node}} (${{item.node_status}}) | PVE: ${{item.version}} | Quorum: ${{item.quorum ? "yes" : "no"}}\n  Nodes online: ${{item.online_nodes}}/${{item.total_nodes}} | HA: ${{item.ha_state}} | Storage: ${{item.storage_healthy ? "healthy" : "unhealthy"}} | Ceph: ${{item.ceph_status}}`;
+              }}).join("\n\n") || payload.message;
+              details.classList.remove("hidden");
+            }} catch (error) {{
+              result.textContent = `Proxmox verification failed: ${{error.message}}`;
+              result.className = "health warn";
+            }}
+          }});
           const result = document.getElementById("notification-test-result");
           const test = async (provider) => {{
             result.textContent = `Sending ${{provider}} test...`;

@@ -8,6 +8,9 @@ This project follows the spirit of Keep a Changelog. Update this file for every 
 
 ### Added
 
+- Added a read-only Proxmox test and verification action covering API credentials, TLS, node status, version, quorum, HA, storage, and Ceph health; bumped the feature version to `0.2.11`.
+- Replaced the pipe-delimited Proxmox hosts textarea with repeatable structured host fields for name, address, node, token ID, secret file, and shutdown order; bumped the feature version to `0.2.10`.
+- Fixed Discord webhook delivery through Discord/Cloudflare by sending an explicit PUG user agent and JSON accept header; bumped the feature version to `0.2.9`.
 - Refreshed GitLab release metadata during feature-branch checks, preserved cached release details when GitLab is temporarily unavailable, clarified the Latest Release label, and bumped the feature version to `0.2.8`.
 - Added direct Discord webhook entry, separate Discord/email test buttons, and example tooltips for Proxmox, HA, and notification settings; protected saved configuration with owner-only permissions and bumped the feature version to `0.2.7`.
 - Backported persistent update diagnostics and installed-package repository discovery to the Proxmox feature branch and aligned its displayed version with `0.2.6`.

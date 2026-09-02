@@ -133,7 +133,7 @@ def test_dashboard_has_modern_sections_and_no_settings_form() -> None:
     assert '<meta http-equiv="refresh" content="30">' not in page
     assert "Administration" in page
     assert "Developed By: Ahsan Muhammad" in page
-    assert "Version 0.2.8" in page
+    assert "Version 0.2.11" in page
     assert 'id="update-banner-text"' in page
     assert "Line / AVR path active" in page
     assert "Line / AVR" in page
@@ -223,6 +223,16 @@ def test_proxmox_settings_page_contains_dedicated_configuration() -> None:
     assert "Test Email" in page
     assert "/api/notifications/test/" in page
     assert "Example: 180 seconds" in page
+    assert "Add Proxmox Host" in page
+    assert "Test and Verify Proxmox Hosts" in page
+    assert "/api/proxmox/test" in page
+    assert 'data-host-field="name"' in page
+    assert 'data-host-field="host"' in page
+    assert 'data-host-field="node"' in page
+    assert 'data-host-field="token_id"' in page
+    assert 'data-host-field="token_secret_file"' in page
+    assert 'data-host-field="order"' in page
+    assert 'name="power_actions_proxmox_servers"' in page
     assert 'class="active" href="/proxmox-settings"' in page
 
 

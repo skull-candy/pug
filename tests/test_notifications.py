@@ -15,7 +15,7 @@ def test_discord_uses_direct_webhook_without_reading_secret_file(monkeypatch) ->
             return False
 
     def fake_urlopen(request, timeout):
-        requests.append((request.full_url, timeout))
+        requests.append((request, timeout))
         return Response()
 
     monkeypatch.setattr("pug.notifications.urlopen", fake_urlopen)
@@ -28,4 +28,8 @@ def test_discord_uses_direct_webhook_without_reading_secret_file(monkeypatch) ->
     results = NotificationManager().send(config, "test_notification", "warning", "Test")
 
     assert results[0].ok is True
-    assert requests == [("https://discord.com/api/webhooks/123/token?wait=true", 10)]
+    request, timeout = requests[0]
+    assert request.full_url == "https://discord.com/api/webhooks/123/token?wait=true"
+    assert request.get_header("User-agent").startswith("PowerPi-UPS-Gateway/")
+    assert request.get_header("Accept") == "application/json"
+    assert timeout == 10

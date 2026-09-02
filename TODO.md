@@ -10,6 +10,9 @@ This file tracks known follow-up work. Update it with every codebase change, eve
 
 ## Done
 
+- Added per-host read-only Proxmox API and cluster health verification from the Web UI.
+- Added structured, repeatable Proxmox host configuration rows with per-field validation.
+- Fixed Discord webhook HTTP 403 responses caused by Python's default HTTP client identity.
 - Kept Latest Release metadata accurate while tracking feature branches.
 - Added secure direct Discord webhook entry, per-provider alert tests, and explanatory examples across Proxmox settings.
 - Backported Web updater installation, logging, and repository-discovery fixes to the Proxmox feature set.

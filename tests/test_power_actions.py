@@ -5,7 +5,7 @@ import pytest
 
 from pug.config import AppConfig, ConfigError, PowerActionsConfig, validate_config
 from pug.power_actions import PowerActionManager
-from pug.proxmox import ProxmoxClient, ProxmoxServer, _ha_stack_state, configured_servers
+from pug.proxmox import ProxmoxClient, ProxmoxServer, _ha_stack_state, configured_servers, verify_proxmox_servers
 from pug.state import StateStore, UPSState
 
 
@@ -72,6 +72,42 @@ def test_proxmox_servers_are_parsed_and_sorted_by_shutdown_order() -> None:
 
     assert [server.name for server in servers] == ["pve-2", "pve-1"]
     assert ProxmoxServer.parse(config.proxmox_servers[0]).node == "pve-1"
+
+
+def test_proxmox_verification_is_read_only_and_reports_health(monkeypatch) -> None:
+    calls = []
+
+    class FakeClient:
+        def __init__(self, server, _config):
+            self.server = server
+
+        def get(self, path):
+            calls.append(path)
+            if path == "/version":
+                return {"version": "8.4.1"}
+            return {"status": "online"}
+
+        def preflight(self):
+            calls.append("preflight")
+            return {
+                "quorum": True,
+                "nodes": [{"name": "pve-1"}],
+                "online_nodes": [{"name": "pve-1"}],
+                "ha_state": "armed",
+                "storage_healthy": True,
+                "ceph_present": False,
+                "ceph_healthy": True,
+            }
+
+    monkeypatch.setattr("pug.proxmox.ProxmoxClient", FakeClient)
+    config = PowerActionsConfig(proxmox_servers=["pve-1|10.0.0.1|pve-1|pug@pve!ups|/secret/one|10"])
+
+    results = verify_proxmox_servers(config)
+
+    assert results[0]["ok"] is True
+    assert results[0]["version"] == "8.4.1"
+    assert results[0]["ha_state"] == "armed"
+    assert calls == ["/version", "/nodes/pve-1/status", "preflight"]
 
 
 def test_config_rejects_bad_server_definition() -> None:

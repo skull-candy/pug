@@ -117,6 +117,34 @@ def configured_servers(config: PowerActionsConfig) -> list[ProxmoxServer]:
     return sorted((ProxmoxServer.parse(value) for value in config.proxmox_servers), key=lambda item: item.order, reverse=True)
 
 
+def verify_proxmox_servers(config: PowerActionsConfig) -> list[dict[str, Any]]:
+    """Perform read-only credential, node, and cluster health checks."""
+    results: list[dict[str, Any]] = []
+    for server in configured_servers(config):
+        result: dict[str, Any] = {"name": server.name, "host": server.host, "node": server.node, "ok": False}
+        try:
+            client = ProxmoxClient(server, config)
+            version = client.get("/version") or {}
+            node_status = client.get(f"/nodes/{server.node}/status") or {}
+            preflight = client.preflight()
+            result.update(
+                ok=True,
+                version=str(version.get("version", "unknown")),
+                node_status=str(node_status.get("status", "unknown")),
+                quorum=bool(preflight["quorum"]),
+                online_nodes=len(preflight["online_nodes"]),
+                total_nodes=len(preflight["nodes"]),
+                ha_state=str(preflight["ha_state"]),
+                storage_healthy=bool(preflight["storage_healthy"]),
+                ceph_status=("healthy" if preflight["ceph_healthy"] else "unhealthy") if preflight["ceph_present"] else "not present",
+                message="API credentials, node status, and cluster preflight verified.",
+            )
+        except (ProxmoxError, OSError, ValueError) as exc:
+            result["message"] = str(exc)
+        results.append(result)
+    return results
+
+
 def _ha_stack_state(value: Any) -> str:
     if isinstance(value, dict):
         for key in ("fencing", "fencing_status", "ha_state"):

@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 from urllib.request import Request, urlopen
 
+from pug import __version__
 from pug.config import NotificationConfig
 
 LOGGER = logging.getLogger(__name__)
@@ -47,7 +48,16 @@ class NotificationManager:
                 "allowed_mentions": {"parse": []},
                 "embeds": [{"title": event.replace("_", " ").title(), "description": message, "color": {"info": 3447003, "warning": 16753920, "critical": 15158332}.get(severity, 3447003), "fields": fields[:25]}],
             }
-            request = Request(webhook + ("&" if "?" in webhook else "?") + "wait=true", data=json.dumps(payload).encode(), headers={"Content-Type": "application/json"}, method="POST")
+            request = Request(
+                webhook + ("&" if "?" in webhook else "?") + "wait=true",
+                data=json.dumps(payload).encode(),
+                headers={
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                    "User-Agent": f"PowerPi-UPS-Gateway/{__version__} (+https://git.vns.ae/ahsan/pug)",
+                },
+                method="POST",
+            )
             with urlopen(request, timeout=config.timeout_seconds) as response:
                 if response.status not in {200, 204}:
                     raise OSError(f"Discord returned HTTP {response.status}")
